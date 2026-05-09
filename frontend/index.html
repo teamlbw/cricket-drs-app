@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- This section sets up the page — it won't be visible to users -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cricket DRS App</title>
+  <!-- This links our style file (CSS) to make things look nice -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- The main heading users will see -->
+  <h1>🏏 Cricket DRS Review System</h1>
+
+  <!-- Mode selector: Game Mode or Coaching Mode -->
+  <div class="mode-buttons">
+    <button id="gameModeBtn">🎮 Game Mode</button>
+    <button id="coachingModeBtn">📋 Coaching Mode</button>
+  </div>
+
+  <!-- Video player: shows the cricket delivery clip -->
+  <div class="video-container">
+    <video id="videoPlayer" width="100%" controls>
+      Your browser does not support video.
+    </video>
+  </div>
+
+  <!-- Canvas: this is where the ball trajectory will be drawn -->
+  <!-- Think of this like a transparent drawing layer ON TOP of the video -->
+  <canvas id="trajectoryCanvas" width="640" height="360"></canvas>
+
+  <!-- Buttons for user actions -->
+  <div class="action-buttons">
+    <button id="saveClipBtn">💾 Save Clip</button>
+    <button id="uploadClipBtn">📂 Upload Clip</button>
+  </div>
+
+  <!-- A small area to show the last 6 deliveries -->
+  <div class="delivery-history">
+    <h3>Last 6 Deliveries</h3>
+    <div id="clipList"></div>
+  </div>
+
+  <!-- This links our JavaScript file (the app's logic) -->
+  <script src="app.js"></script>
+</body>
+</html>

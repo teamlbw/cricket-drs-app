@@ -1,0 +1,66 @@
+/* This styles the whole page */
+body {
+  font-family: Arial, sans-serif; /* Easy-to-read font */
+  background-color: #1a1a2e;     /* Dark cricket-themed background */
+  color: #ffffff;                 /* White text */
+  text-align: center;
+  padding: 20px;
+  margin: 0;
+}
+
+/* Title styling */
+h1 {
+  color: #00d4aa; /* Cricket green */
+  font-size: 28px;
+  margin-bottom: 20px;
+}
+
+/* Mode buttons area */
+.mode-buttons {
+  margin-bottom: 20px;
+}
+
+/* General button style */
+button {
+  background-color: #00d4aa;
+  color: #1a1a2e;
+  border: none;
+  padding: 12px 24px;
+  margin: 8px;
+  border-radius: 8px;       /* Rounded corners */
+  font-size: 16px;
+  cursor: pointer;          /* Hand cursor on hover */
+}
+
+/* Button hover effect */
+button:hover {
+  background-color: #00a887;
+}
+
+/* Video player container */
+.video-container {
+  max-width: 640px;
+  margin: 0 auto 10px;
+  border: 3px solid #00d4aa;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* The drawing canvas — sits below the video for now */
+#trajectoryCanvas {
+  border: 2px dashed #00d4aa;
+  display: block;
+  margin: 0 auto 20px;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Last 6 deliveries panel */
+.delivery-history {
+  margin-top: 20px;
+  background: #16213e;
+  padding: 15px;
+  border-radius: 10px;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
