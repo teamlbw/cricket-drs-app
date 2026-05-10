@@ -116,3 +116,201 @@ function addClipToHistory(clipName) {
 
   clipList.appendChild(clipEntry); // Add it to the list
 }
+// =============================================
+// PHASE 5 — CONNECTING TO THE BACKEND
+// =============================================
+
+// This is your backend's address — where we send data to
+const BACKEND_URL = 'http://localhost:5000';
+
+// ---- FUNCTION: Send trajectory data to the backend ----
+async function sendTrajectoryToBackend(deliveryId, trajectoryPoints) {
+
+  // Tell the user something is happening
+  console.log('📡 Sending trajectory to backend...');
+
+  try {
+    // Build the data package to send
+    const dataToSend = {
+      delivery_id: deliveryId,
+      coordinates: trajectoryPoints.map(function(point, index) {
+        return {
+          x:         point.x,
+          y:         point.y,
+          timestamp: index * 0.1   // Fake timestamps: 0.0, 0.1, 0.2 etc.
+        };
+      })
+    };
+
+    // Send the data to the backend using fetch
+    const response = await fetch(BACKEND_URL + '/api/trajectory', {
+      method:  'POST',                          // We are SENDING data
+      headers: { 'Content-Type': 'application/json' }, // Tell backend it's JSON
+      body:    JSON.stringify(dataToSend)        // Convert data to text format
+    });
+
+    // Wait for the backend's reply
+    const result = await response.json();
+    console.log('✅ Backend replied:', result.message);
+
+    // Show a success message on screen
+    showStatusMessage('✅ Trajectory sent! Delivery: ' + deliveryId);
+        // If the backend returned an LBW result, display it on canvas
+    if (result && result.lbw_result) {
+      displayLBWVerdict(result.lbw_result);
+    }
+
+
+    return result;
+
+  } catch (error) {
+    // Something went wrong — show an error
+    console.error('❌ Could not reach backend:', error);
+    showStatusMessage('❌ Backend not reachable. Is it running?');
+  }
+}
+
+// ---- FUNCTION: Show a small status message on screen ----
+function showStatusMessage(message) {
+  // Check if a status box already exists
+  let statusBox = document.getElementById('statusMessage');
+
+  // If not, create one
+  if (!statusBox) {
+    statusBox = document.createElement('div');
+    statusBox.id = 'statusMessage';
+    statusBox.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #00d4aa;
+      color: #1a1a2e;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 14px;
+      z-index: 1000;
+    `;
+    document.body.appendChild(statusBox);
+  }
+
+  statusBox.textContent = message;
+
+  // Hide it after 3 seconds
+  setTimeout(function() {
+    statusBox.textContent = '';
+  }, 3000);
+}
+
+// ---- FUNCTION: Load and display last 6 deliveries from backend ----
+async function loadDeliveryHistory() {
+  try {
+    const response = await fetch(BACKEND_URL + '/api/deliveries');
+    const data     = await response.json();
+
+    // Clear the current list
+    clipList.innerHTML = '';
+
+    // Add each delivery to the panel
+    data.deliveries.forEach(function(delivery) {
+      addClipToHistory(delivery.delivery_id + ' (' + delivery.total_points + ' pts)');
+    });
+
+    console.log('📋 Loaded', data.total_stored, 'deliveries from backend');
+
+  } catch (error) {
+    console.error('❌ Could not load deliveries:', error);
+  }
+}
+
+// ---- TEST BUTTON: Send example trajectory to backend ----
+// Add a test button to the page automatically
+const testBtn = document.createElement('button');
+testBtn.textContent = '🧪 Test: Send Trajectory to Backend';
+testBtn.style.background = '#ff6b35';
+testBtn.addEventListener('click', async function() {
+  const deliveryId = 'del_' + Date.now(); // Unique ID using current time
+  await sendTrajectoryToBackend(deliveryId, exampleTrajectory);
+  await loadDeliveryHistory(); // Refresh the delivery list
+});
+
+// Add the test button to the page
+document.querySelector('.action-buttons').appendChild(testBtn);
+
+// Load delivery history when page first opens
+loadDeliveryHistory();
+// =============================================
+// PHASE 6 — LBW VERDICT DISPLAY ON CANVAS
+// =============================================
+
+// ---- Draw the stumps on the canvas ----
+function drawStumps() {
+  // Stump positions — should match backend STUMP_CONFIG
+  const leftX   = 290;
+  const rightX  = 350;
+  const topY    = 160;
+  const bottomY = 300;
+
+  ctx.strokeStyle = '#ffffff'; // White stumps
+  ctx.lineWidth   = 4;
+
+  // Draw 3 stumps (left, middle, right)
+  const stumpPositions = [leftX, (leftX + rightX) / 2, rightX];
+
+  stumpPositions.forEach(function(x) {
+    ctx.beginPath();
+    ctx.moveTo(x, topY);    // Top of stump
+    ctx.lineTo(x, bottomY); // Bottom of stump
+    ctx.stroke();
+  });
+
+  // Draw the bails (the little pieces on top)
+  ctx.beginPath();
+  ctx.moveTo(leftX,  topY);
+  ctx.lineTo(rightX, topY);
+  ctx.strokeStyle = '#ffdd00'; // Yellow bails
+  ctx.lineWidth   = 3;
+  ctx.stroke();
+}
+
+// ---- Show the LBW verdict as a big overlay on the canvas ----
+function displayLBWVerdict(lbwResult) {
+  // First redraw the trajectory + stumps
+  drawTrajectory(exampleTrajectory);
+  drawStumps();
+
+  // Choose colour based on result
+  const isOut      = lbwResult.prediction.includes('OUT -');
+  const bgColour   = isOut ? 'rgba(255, 0, 0, 0.75)' : 'rgba(0, 200, 100, 0.75)';
+  const textColour = '#ffffff';
+
+  // Draw a coloured box at the top of the canvas
+  ctx.fillStyle = bgColour;
+  ctx.fillRect(0, 0, canvas.width, 80); // Box across top
+
+  // Draw the verdict text
+  ctx.fillStyle  = textColour;
+  ctx.font       = 'bold 28px Arial';
+  ctx.textAlign  = 'center';
+  ctx.fillText(lbwResult.prediction, canvas.width / 2, 35);
+
+  // Draw the confidence text
+  ctx.font      = '16px Arial';
+  ctx.fillText(
+    'Confidence: ' + lbwResult.confidence + '%  |  ' + lbwResult.reason,
+    canvas.width / 2,
+    62
+  );
+
+  // Reset text alignment
+  ctx.textAlign = 'left';
+
+  // Also show the status message
+  showStatusMessage(
+    (isOut ? '🔴 OUT!' : '🟢 NOT OUT!') +
+    ' — ' + lbwResult.confidence + '% confident'
+  );
+}
+
+// ---- Draw stumps when page loads ----
+drawStumps();

@@ -64,3 +64,24 @@ button:hover {
   margin-left: auto;
   margin-right: auto;
 }
+/* Status message popup */
+#statusMessage {
+  transition: opacity 0.3s ease;
+}
+
+/* Canvas gets a shadow to stand out */
+#trajectoryCanvas {
+  box-shadow: 0 0 20px rgba(0, 212, 170, 0.4);
+}
+
+/* Test button special colour */
+button[style*="ff6b35"] {
+  font-weight: bold;
+}
+
+/* Delivery history items */
+#clipList div:hover {
+  background: #1a4a7e !important;
+  cursor: pointer;
+  transition: background 0.2s;
+}
