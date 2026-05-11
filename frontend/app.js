@@ -28,25 +28,81 @@ coachingModeBtn.addEventListener('click', function() {
 
 // ---- STEP B: UPLOAD A VIDEO CLIP (Coaching Mode) ----
 
+// =============================================
+// PHASE 9 — IMPROVED VIDEO UPLOAD
+// =============================================
+
 uploadClipBtn.addEventListener('click', function() {
-  // Create a hidden file picker and trigger it
-  const filePicker = document.createElement('input');
-  filePicker.type = 'file';
-  filePicker.accept = 'video/*'; // Only allow video files
+  const filePicker   = document.createElement('input');
+  filePicker.type    = 'file';
+  filePicker.accept  = 'video/*';
 
   filePicker.addEventListener('change', function() {
-    const selectedFile = filePicker.files[0]; // The file the user chose
-    if (selectedFile) {
-      // Create a temporary URL for the video and load it
-      const videoURL = URL.createObjectURL(selectedFile);
-      videoPlayer.src = videoURL;
-      videoPlayer.play();
-      console.log('Video loaded:', selectedFile.name);
+    const selectedFile = filePicker.files[0];
+
+    if (!selectedFile) return; // User cancelled — do nothing
+
+    // Check file size — warn if over 100MB
+    const fileSizeMB = selectedFile.size / (1024 * 1024);
+    if (fileSizeMB > 100) {
+      alert('⚠️ That video is ' + fileSizeMB.toFixed(1) + 'MB. Try a shorter clip (10-20 seconds) for best results.');
+      return;
     }
+
+    // Load the video into the player
+    const videoURL   = URL.createObjectURL(selectedFile);
+    videoPlayer.src  = videoURL;
+    videoPlayer.load();
+    videoPlayer.play();
+
+    // Store the clip name for later use
+    videoPlayer.dataset.clipName = selectedFile.name;
+
+    showStatusMessage('📂 Loaded: ' + selectedFile.name);
+    console.log('Video loaded:', selectedFile.name, '| Size:', fileSizeMB.toFixed(1) + 'MB');
+
+    // Auto-detect when video ends (simulates "delivery complete")
+    videoPlayer.addEventListener('ended', function() {
+      showStatusMessage('🏏 Delivery complete! Review the trajectory.');
+      addClipToHistory(selectedFile.name);
+    });
   });
 
-  filePicker.click(); // Open the file picker
+  filePicker.click();
 });
+
+// ---- IMPROVED SAVE BUTTON ----
+saveClipBtn.addEventListener('click', async function() {
+
+  // Find the most recent delivery in history
+  const lastDelivery = delivery_history_local[delivery_history_local.length - 1];
+
+  if (!lastDelivery) {
+    alert('⚠️ No delivery to save yet. Send a trajectory first!');
+    return;
+  }
+
+  try {
+    const response = await fetch(BACKEND_URL + '/api/save', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ delivery_id: lastDelivery })
+    });
+
+    const result = await response.json();
+    showStatusMessage('💾 ' + result.message);
+
+  } catch (error) {
+    showStatusMessage('❌ Could not save. Is the backend running?');
+  }
+});
+
+// Keep a local list of sent delivery IDs for the save button
+const delivery_history_local = [];
+
+// Update local history whenever we send to backend
+const originalSend = sendTrajectoryToBackend;
+// (The save button uses delivery_history_local to know what to save)
 
 // ---- STEP C: DRAW BALL TRAJECTORY ON CANVAS ----
 
