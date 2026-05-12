@@ -1,84 +1,605 @@
 // =============================================
-// CRICKET DRS APP — Frontend Logic (app.js)
+// CRICKET DRS APP — Full app.js (Phase 11-14)
 // =============================================
 
-// These lines "grab" the HTML elements so we can control them with code
-const videoPlayer    = document.getElementById('videoPlayer');
-const canvas         = document.getElementById('trajectoryCanvas');
-const ctx            = canvas.getContext('2d'); // This lets us draw on the canvas
-const clipList       = document.getElementById('clipList');
-const gameModeBtn    = document.getElementById('gameModeBtn');
-const coachingModeBtn = document.getElementById('coachingModeBtn');
-const saveClipBtn    = document.getElementById('saveClipBtn');
-const uploadClipBtn  = document.getElementById('uploadClipBtn');
+// ---- BACKEND URL ----
+const BACKEND_URL = 'http://localhost:5000';
 
-// ---- STEP A: MODE SWITCHING ----
+// ---- GRAB ALL HTML ELEMENTS WE NEED ----
+const videoPlayer        = document.getElementById('videoPlayer');
+const trajectoryCanvas   = document.getElementById('trajectoryCanvas');
+const frameCanvas        = document.getElementById('frameCanvas');
+const ctx                = trajectoryCanvas.getContext('2d');
+const frameCtx           = frameCanvas.getContext('2d');
+const clipList           = document.getElementById('clipList');
+const detectionStatus    = document.getElementById('detectionStatus');
+const startDetectionBtn  = document.getElementById('startDetectionBtn');
+const stopDetectionBtn   = document.getElementById('stopDetectionBtn');
+const gameModeBtn        = document.getElementById('gameModeBtn');
+const coachingModeBtn    = document.getElementById('coachingModeBtn');
+const saveClipBtn        = document.getElementById('saveClipBtn');
+const uploadClipBtn      = document.getElementById('uploadClipBtn');
+const clearTrajectoryBtn = document.getElementById('clearTrajectoryBtn');
 
-// When user clicks "Game Mode" button
-gameModeBtn.addEventListener('click', function() {
-  alert('🎮 Game Mode Activated! Recording last 6 deliveries.');
-  // TODO: Start camera / delivery detection in future steps
+// =============================================
+// COLOR CONFIGURATION
+// Defines the RGB detection ranges for each ball color
+// Each color has: min and max values for Red, Green, Blue
+// =============================================
+const BALL_COLORS = {
+
+  red: {
+    label:     '🔴 Red Ball',
+    badgeClass: 'red-badge',
+    // Red ball: HIGH red, LOW green, LOW blue
+    detect: function(r, g, b) {
+      return (r > 150 && g < 90 && b < 90);
+    },
+    dotColor:  '#ff4444',
+    lineColor: '#ff0000'
+  },
+
+  white: {
+    label:     '⚪ White Ball',
+    badgeClass: 'white-badge',
+    // White ball: ALL channels HIGH (bright pixel)
+    detect: function(r, g, b) {
+      return (r > 200 && g > 200 && b > 200);
+    },
+    dotColor:  '#ffffff',
+    lineColor: '#dddddd'
+  },
+
+  green: {
+    label:     '🟢 Green Ball',
+    badgeClass: 'green-badge',
+    // Green ball: HIGH green, LOW red, LOW blue
+    detect: function(r, g, b) {
+      return (g > 130 && r < 100 && b < 100);
+    },
+    dotColor:  '#44ff44',
+    lineColor: '#00cc00'
+  },
+
+  custom: {
+    label:      '🎨 Custom Ball',
+    badgeClass: 'custom-badge',
+    // Custom: set dynamically by user's color picker
+    // These values update when the user picks a color
+    targetR: 255,
+    targetG: 0,
+    targetB: 0,
+    detect: function(r, g, b) {
+      // Check if pixel is within ±60 of the chosen color on all channels
+      const tolerance = 60;
+      return (
+        Math.abs(r - this.targetR) < tolerance &&
+        Math.abs(g - this.targetG) < tolerance &&
+        Math.abs(b - this.targetB) < tolerance
+      );
+    },
+    dotColor:  '#dd88ff',
+    lineColor: '#aa44ff'
+  }
+
+};
+
+// ---- Currently Selected Ball Color ----
+// Default: red. This changes when user clicks a color button.
+let selectedBallColor = 'red';
+
+// ---- APP STATE ----
+// Think of "state" as the app's memory of what's happening right now
+let appState = {
+  mode:              'idle',
+  isDetecting:       false,
+  detectionInterval: null,
+  trajectoryPoints:  [],
+  deliveryCount:     0,
+  localDeliveryIds:  [],
+  selectedColor:     'red',     // ← NEW: tracks selected ball color
+  stumps: {
+    leftX:   290,
+    rightX:  350,
+    topY:    160,
+    bottomY: 300
+  }
+};
+
+
+// =============================================
+// SECTION 1 — CANVAS SIZING
+// Make canvas match video size exactly
+// =============================================
+function resizeCanvas() {
+  const wrapper = document.querySelector('.video-wrapper');
+  trajectoryCanvas.width  = wrapper.offsetWidth;
+  trajectoryCanvas.height = wrapper.offsetHeight;
+  frameCanvas.width       = wrapper.offsetWidth;
+  frameCanvas.height      = wrapper.offsetHeight;
+  // Redraw stumps after resize
+  drawStumps();
+}
+
+// Resize when video loads and when window is resized
+videoPlayer.addEventListener('loadedmetadata', resizeCanvas);
+window.addEventListener('resize', resizeCanvas);
+
+// =============================================
+// COLOR SELECTION — Handle Button Clicks
+// =============================================
+
+// Grab all color buttons and badge display
+const colorButtons    = document.querySelectorAll('.color-btn');
+const colorBadge      = document.getElementById('currentColorBadge');
+const customPicker    = document.getElementById('customColorPicker');
+const colorPickerInput = document.getElementById('colorPickerInput');
+const colorPreview    = document.getElementById('selectedColorPreview');
+
+// ---- When user clicks a color button ----
+colorButtons.forEach(function(btn) {
+  btn.addEventListener('click', function() {
+
+    // Remove "active" highlight from ALL buttons
+    colorButtons.forEach(function(b) {
+      b.classList.remove('active-color');
+    });
+
+    // Highlight the clicked button
+    btn.classList.add('active-color');
+
+    // Get which color was selected (from data-color attribute)
+    const chosenColor = btn.getAttribute('data-color');
+    selectedBallColor  = chosenColor;
+    appState.selectedColor = chosenColor;
+
+    // Show/hide custom color picker
+    if (chosenColor === 'custom') {
+      customPicker.style.display = 'flex';
+    } else {
+      customPicker.style.display = 'none';
+    }
+
+    // Update the badge display
+    const colorInfo    = BALL_COLORS[chosenColor];
+    colorBadge.textContent  = colorInfo.label;
+    colorBadge.className    = 'color-badge ' + colorInfo.badgeClass;
+
+    // Tell the backend about the color change
+    sendColorToBackend(chosenColor);
+
+    showStatusMessage('🎨 Ball color changed to: ' + colorInfo.label);
+    console.log('Ball color set to:', chosenColor);
+  });
 });
 
-// When user clicks "Coaching Mode" button
-coachingModeBtn.addEventListener('click', function() {
-  alert('📋 Coaching Mode Activated! You can now upload clips.');
-  uploadClipBtn.style.display = 'inline-block'; // Show upload button
+// ---- When user picks a custom color from the color picker ----
+colorPickerInput.addEventListener('input', function() {
+  const hexColor = colorPickerInput.value; // e.g. "#3a7bd5"
+  colorPreview.textContent = 'Selected: ' + hexColor;
+
+  // Convert hex (#RRGGBB) to individual R, G, B numbers
+  const r = parseInt(hexColor.slice(1, 3), 16); // Characters 1-2
+  const g = parseInt(hexColor.slice(3, 5), 16); // Characters 3-4
+  const b = parseInt(hexColor.slice(5, 7), 16); // Characters 5-6
+
+  // Update the custom detection targets
+  BALL_COLORS.custom.targetR = r;
+  BALL_COLORS.custom.targetG = g;
+  BALL_COLORS.custom.targetB = b;
+
+  // Update custom dot/line color to match selected color
+  BALL_COLORS.custom.dotColor  = hexColor;
+  BALL_COLORS.custom.lineColor = hexColor;
+
+  // Update badge
+  colorBadge.textContent = '🎨 Custom (' + hexColor + ')';
+
+  // Tell the backend about this custom color
+  sendColorToBackend('custom', { r, g, b, hex: hexColor });
+
+  console.log('Custom color set:', hexColor, '→ RGB(', r, g, b, ')');
 });
 
-// ---- STEP B: UPLOAD A VIDEO CLIP (Coaching Mode) ----
+// ---- Send selected color to backend ----
+async function sendColorToBackend(colorName, customRgb = null) {
+  try {
+    const payload = {
+      color_name: colorName,
+      custom_rgb: customRgb   // Only used when colorName is "custom"
+    };
+
+    await fetch(BACKEND_URL + '/api/ball-color', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload)
+    });
+
+    console.log('✅ Color sent to backend:', colorName);
+  } catch (error) {
+    // Don't show an error — backend color sync is optional
+    console.log('Backend color sync skipped (backend may be offline)');
+  }
+}
 
 // =============================================
-// PHASE 9 — IMPROVED VIDEO UPLOAD
+// SECTION 2 — MODE BUTTONS
 // =============================================
+gameModeBtn.addEventListener('click', function () {
+  appState.mode = 'game';
+  gameModeBtn.style.background    = '#ff6b35'; // Highlight active mode
+  coachingModeBtn.style.background = '#00d4aa';
+  showStatusMessage('🎮 Game Mode ON — Upload a delivery clip!');
+});
 
-uploadClipBtn.addEventListener('click', function() {
-  const filePicker   = document.createElement('input');
-  filePicker.type    = 'file';
-  filePicker.accept  = 'video/*';
+coachingModeBtn.addEventListener('click', function () {
+  appState.mode = 'coaching';
+  coachingModeBtn.style.background = '#ff6b35';
+  gameModeBtn.style.background     = '#00d4aa';
+  showStatusMessage('📋 Coaching Mode ON — Upload any clip to review!');
+});
 
-  filePicker.addEventListener('change', function() {
-    const selectedFile = filePicker.files[0];
+// =============================================
+// SECTION 3 — VIDEO UPLOAD
+// =============================================
+uploadClipBtn.addEventListener('click', function () {
+  const filePicker  = document.createElement('input');
+  filePicker.type   = 'file';
+  filePicker.accept = 'video/*';
 
-    if (!selectedFile) return; // User cancelled — do nothing
+  filePicker.addEventListener('change', function () {
+    const file = filePicker.files[0];
+    if (!file) return;
 
-    // Check file size — warn if over 100MB
-    const fileSizeMB = selectedFile.size / (1024 * 1024);
-    if (fileSizeMB > 100) {
-      alert('⚠️ That video is ' + fileSizeMB.toFixed(1) + 'MB. Try a shorter clip (10-20 seconds) for best results.');
+    // Warn if file is too large
+    const sizeMB = file.size / (1024 * 1024);
+    if (sizeMB > 150) {
+      alert('⚠️ File is ' + sizeMB.toFixed(1) + 'MB — try a 10-20 second clip!');
       return;
     }
 
-    // Load the video into the player
-    const videoURL   = URL.createObjectURL(selectedFile);
-    videoPlayer.src  = videoURL;
+    // Load video into player
+    videoPlayer.src = URL.createObjectURL(file);
     videoPlayer.load();
-    videoPlayer.play();
 
-    // Store the clip name for later use
-    videoPlayer.dataset.clipName = selectedFile.name;
+    // Reset trajectory when new video loads
+    appState.trajectoryPoints = [];
+    ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
 
-    showStatusMessage('📂 Loaded: ' + selectedFile.name);
-    console.log('Video loaded:', selectedFile.name, '| Size:', fileSizeMB.toFixed(1) + 'MB');
+    videoPlayer.addEventListener('canplay', function () {
+      resizeCanvas();
+      drawStumps();
+      showStatusMessage('✅ Loaded: ' + file.name);
+    }, { once: true }); // "once: true" means this only fires one time
 
-    // Auto-detect when video ends (simulates "delivery complete")
-    videoPlayer.addEventListener('ended', function() {
-      showStatusMessage('🏏 Delivery complete! Review the trajectory.');
-      addClipToHistory(selectedFile.name);
-    });
+    // Auto-record delivery when video ends
+    videoPlayer.addEventListener('ended', function () {
+      showStatusMessage('🏏 Delivery complete!');
+      if (appState.trajectoryPoints.length > 0) {
+        sendTrajectoryToBackend();
+      }
+    }, { once: true });
   });
 
   filePicker.click();
 });
 
-// ---- IMPROVED SAVE BUTTON ----
-saveClipBtn.addEventListener('click', async function() {
+// =============================================
+// SECTION 4 — BALL DETECTION (Frame by Frame)
+// =============================================
 
-  // Find the most recent delivery in history
-  const lastDelivery = delivery_history_local[delivery_history_local.length - 1];
+// ---- Start Detection ----
+startDetectionBtn.addEventListener('click', function () {
+  if (!videoPlayer.src) {
+    alert('⚠️ Please upload a video first!');
+    return;
+  }
 
-  if (!lastDelivery) {
-    alert('⚠️ No delivery to save yet. Send a trajectory first!');
+  appState.isDetecting      = true;
+  appState.trajectoryPoints = []; // Clear old points
+  startDetectionBtn.disabled = true;
+  stopDetectionBtn.disabled  = false;
+  detectionStatus.textContent = 'Detection: 🔍 Running...';
+  detectionStatus.style.color = '#00d4aa';
+
+  videoPlayer.play();
+
+  // Run detection every 80 milliseconds (~12 frames per second)
+  // This gives us enough points without being too slow
+  appState.detectionInterval = setInterval(detectBallInFrame, 80);
+
+  showStatusMessage('🔍 Ball detection started!');
+});
+
+// ---- Stop Detection ----
+stopDetectionBtn.addEventListener('click', stopDetection);
+
+function stopDetection() {
+  appState.isDetecting = false;
+  clearInterval(appState.detectionInterval);
+  startDetectionBtn.disabled  = false;
+  stopDetectionBtn.disabled   = true;
+  detectionStatus.textContent = 'Detection: ⏹ Stopped';
+  detectionStatus.style.color = '#aaaaaa';
+
+  showStatusMessage('⏹ Detection stopped — ' + appState.trajectoryPoints.length + ' points captured');
+
+  // If we have points, send them to the backend automatically
+  if (appState.trajectoryPoints.length >= 3) {
+    sendTrajectoryToBackend();
+  }
+}
+
+// ---- THE CORE DETECTION FUNCTION (Now Color-Aware!) ----
+function detectBallInFrame() {
+  if (!appState.isDetecting || videoPlayer.paused || videoPlayer.ended) {
+    stopDetection();
+    return;
+  }
+
+  // Step 1: Capture current video frame into hidden canvas
+  frameCtx.drawImage(videoPlayer, 0, 0, frameCanvas.width, frameCanvas.height);
+  const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+  const pixels    = imageData.data;
+
+  // Step 2: Get the CURRENT color's detection function
+  // This is the key change — instead of always checking red,
+  // we look up whichever color the user selected!
+  const colorConfig  = BALL_COLORS[appState.selectedColor];
+  const detectPixel  = colorConfig.detect.bind(colorConfig);
+  // .bind(colorConfig) is needed so "this" works inside the detect function
+
+  let ballX     = 0;
+  let ballY     = 0;
+  let ballCount = 0;
+
+  // Step 3: Scan every pixel
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];       // Red
+    const g = pixels[i + 1];   // Green
+    const b = pixels[i + 2];   // Blue
+    // pixels[i + 3] is Alpha (transparency) — we ignore it
+
+    // Use the color-specific detection function
+    if (detectPixel(r, g, b)) {
+      const pixelIndex = i / 4;
+      const pixelX     = pixelIndex % frameCanvas.width;
+      const pixelY     = Math.floor(pixelIndex / frameCanvas.width);
+
+      ballX     += pixelX;
+      ballY     += pixelY;
+      ballCount++;
+    }
+  }
+
+  // Step 4: If enough matching pixels found → record ball position
+  // We use different thresholds per color:
+  // White needs more pixels (background noise), red/green need fewer
+  const minPixelThreshold = appState.selectedColor === 'white' ? 25 : 10;
+
+  if (ballCount > minPixelThreshold) {
+    const avgX = Math.round(ballX / ballCount);
+    const avgY = Math.round(ballY / ballCount);
+
+    const point = {
+      x:         avgX,
+      y:         avgY,
+      timestamp: parseFloat(videoPlayer.currentTime.toFixed(3)),
+      color:     appState.selectedColor  // ← Store which color was used
+    };
+
+    appState.trajectoryPoints.push(point);
+
+    // Draw trajectory using the correct color for the ball
+    drawTrajectory(appState.trajectoryPoints);
+    drawStumps();
+
+    detectionStatus.textContent =
+      'Detection: 🔍 ' + appState.trajectoryPoints.length +
+      ' pts (' + colorConfig.label + ')';
+  }
+}
+
+
+// =============================================
+// SECTION 5 — DRAWING FUNCTIONS
+// =============================================
+
+// ---- Draw the Ball Trajectory ----
+function drawTrajectory(points) {
+  if (points.length < 2) return;
+
+  ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
+
+  // Get the color config for the CURRENT selected color
+  const colorConfig = BALL_COLORS[appState.selectedColor];
+
+  // Draw the trajectory line using the ball's color
+  ctx.beginPath();
+  ctx.strokeStyle = colorConfig.lineColor;  // ← Dynamic color!
+  ctx.lineWidth   = 3;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y);
+  }
+  ctx.stroke();
+
+  // Draw dots at each point using the ball's color
+  points.forEach(function(point, index) {
+    ctx.beginPath();
+    const radius = (index === points.length - 1) ? 8 : 5;
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    // Last dot is white (most recent position)
+    ctx.fillStyle = index === points.length - 1 ? '#ffffff' : colorConfig.dotColor;
+    ctx.fill();
+  });
+
+  drawStumps();
+}
+
+
+// ---- Draw the Stumps ----
+function drawStumps() {
+  const { leftX, rightX, topY, bottomY } = appState.stumps;
+  const midX = Math.round((leftX + rightX) / 2);
+
+  ctx.lineWidth = 4;
+
+  // Draw 3 stumps
+  [leftX, midX, rightX].forEach(function (x) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#ffffff';
+    ctx.moveTo(x, topY);
+    ctx.lineTo(x, bottomY);
+    ctx.stroke();
+  });
+
+  // Draw bails (top crossbar)
+  ctx.beginPath();
+  ctx.strokeStyle = '#ffdd00';
+  ctx.lineWidth   = 3;
+  ctx.moveTo(leftX,  topY);
+  ctx.lineTo(rightX, topY);
+  ctx.stroke();
+}
+
+// ---- Display LBW Verdict on Canvas ----
+function displayLBWVerdict(lbwResult) {
+  const isOut    = lbwResult.prediction.includes('OUT -');
+  const bgColour = isOut ? 'rgba(200,0,0,0.82)' : 'rgba(0,160,80,0.82)';
+
+  // Draw verdict banner at top of canvas
+  ctx.fillStyle = bgColour;
+  ctx.fillRect(0, 0, trajectoryCanvas.width, 76);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+
+  ctx.font = 'bold 26px Arial';
+  ctx.fillText(lbwResult.prediction, trajectoryCanvas.width / 2, 34);
+
+  ctx.font = '14px Arial';
+  ctx.fillText(
+    'Confidence: ' + lbwResult.confidence + '%   |   ' + lbwResult.reason,
+    trajectoryCanvas.width / 2,
+    60
+  );
+
+  ctx.textAlign = 'left';
+
+  showStatusMessage(
+    (isOut ? '🔴 OUT!' : '🟢 NOT OUT!') + ' ' + lbwResult.confidence + '% confident'
+  );
+}
+
+// ---- Clear Trajectory ----
+clearTrajectoryBtn.addEventListener('click', function () {
+  appState.trajectoryPoints = [];
+  ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
+  drawStumps();
+  showStatusMessage('🗑 Trajectory cleared');
+});
+
+// =============================================
+// SECTION 6 — BACKEND COMMUNICATION
+// =============================================
+
+// ---- Send Trajectory to Backend ----
+async function sendTrajectoryToBackend() {
+  if (appState.trajectoryPoints.length < 2) {
+    showStatusMessage('⚠️ Not enough points yet — keep detecting!');
+    return;
+  }
+
+  const deliveryId = 'del_' + Date.now();
+  appState.localDeliveryIds.push(deliveryId);
+
+  // Keep only last 6 IDs
+  if (appState.localDeliveryIds.length > 6) {
+    appState.localDeliveryIds.shift();
+  }
+
+  try {
+    const response = await fetch(BACKEND_URL + '/api/trajectory', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        delivery_id: deliveryId,
+        coordinates: appState.trajectoryPoints,
+        ball_color:   appState.selectedColor    // ← Send color to backend!
+      })
+    });
+
+    const result = await response.json();
+
+    // Show the LBW verdict on canvas
+    if (result.lbw_result) {
+      displayLBWVerdict(result.lbw_result);
+    }
+
+    // Update delivery history panel
+    addClipToHistory(
+      deliveryId,
+      result.lbw_result ? result.lbw_result.prediction : 'Sent',
+      appState.trajectoryPoints.length
+    );
+
+    console.log('✅ Backend replied:', result);
+
+  } catch (error) {
+    showStatusMessage('❌ Cannot reach backend — is it running?');
+    console.error(error);
+  }
+}
+
+// ---- Load Delivery History from Backend ----
+async function loadDeliveryHistory() {
+  try {
+    const response = await fetch(BACKEND_URL + '/api/deliveries');
+    const data     = await response.json();
+
+    clipList.innerHTML = '';
+    data.deliveries.forEach(function (delivery) {
+      const verdict = delivery.lbw_result
+        ? delivery.lbw_result.prediction
+        : 'No verdict';
+      addClipToHistory(delivery.delivery_id, verdict, delivery.total_points);
+    });
+  } catch (error) {
+    console.log('Backend not reachable yet — that is OK!');
+  }
+}
+
+// ---- Add a Delivery to the History Panel ----
+function addClipToHistory(id, verdict, pointCount) {
+  // Keep max 6
+  while (clipList.children.length >= 6) {
+    clipList.removeChild(clipList.firstChild);
+  }
+
+  const isOut  = verdict && verdict.includes('OUT -');
+  const colour = isOut ? '#ff4444' : '#00d4aa';
+
+  const entry           = document.createElement('div');
+  entry.innerHTML       = `
+    <span style="color:${colour}; font-weight:bold;">
+      ${isOut ? '🔴' : '🟢'} ${verdict || 'Pending'}
+    </span>
+    <br/>
+    <small style="color:#aaa;">ID: ${id} | ${pointCount} pts</small>
+  `;
+  clipList.appendChild(entry);
+}
+
+// ---- Save Clip Button ----
+saveClipBtn.addEventListener('click', async function () {
+  const lastId = appState.localDeliveryIds[appState.localDeliveryIds.length - 1];
+
+  if (!lastId) {
+    alert('⚠️ No delivery to save yet!');
     return;
   }
 
@@ -86,287 +607,90 @@ saveClipBtn.addEventListener('click', async function() {
     const response = await fetch(BACKEND_URL + '/api/save', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ delivery_id: lastDelivery })
+      body:    JSON.stringify({ delivery_id: lastId })
     });
-
     const result = await response.json();
     showStatusMessage('💾 ' + result.message);
-
   } catch (error) {
-    showStatusMessage('❌ Could not save. Is the backend running?');
+    showStatusMessage('❌ Could not save — is backend running?');
   }
 });
 
-// Keep a local list of sent delivery IDs for the save button
-const delivery_history_local = [];
+// =============================================
+// SECTION 7 — CAMERA CALIBRATION (Drag Sliders)
+// =============================================
+const leftStumpSlider   = document.getElementById('leftStumpX');
+const rightStumpSlider  = document.getElementById('rightStumpX');
+const topStumpSlider    = document.getElementById('topStumpY');
+const bottomStumpSlider = document.getElementById('bottomStumpY');
 
-// Update local history whenever we send to backend
-const originalSend = sendTrajectoryToBackend;
-// (The save button uses delivery_history_local to know what to save)
+// Update stump drawing live as sliders move
+function updateStumpsFromSliders() {
+  appState.stumps.leftX   = parseInt(leftStumpSlider.value);
+  appState.stumps.rightX  = parseInt(rightStumpSlider.value);
+  appState.stumps.topY    = parseInt(topStumpSlider.value);
+  appState.stumps.bottomY = parseInt(bottomStumpSlider.value);
 
-// ---- STEP C: DRAW BALL TRAJECTORY ON CANVAS ----
-
-// Example trajectory points — in future, these will come from your backend!
-// Each point is: { x: horizontal position, y: vertical position }
-const exampleTrajectory = [
-  { x: 100, y: 50  },
-  { x: 180, y: 120 },
-  { x: 260, y: 200 },
-  { x: 340, y: 290 },
-  { x: 420, y: 330 },
-  { x: 500, y: 340 },
-];
-
-// This function draws a line connecting all the trajectory points
-function drawTrajectory(points) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous drawing
-  ctx.beginPath();                     // Start drawing
-  ctx.strokeStyle = '#ff4444';         // Red line for the ball path
-  ctx.lineWidth = 4;                   // Line thickness
-
-  // Move to the first point
-  ctx.moveTo(points[0].x, points[0].y);
-
-  // Draw a line to each following point
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x, points[i].y);
+  // Redraw everything
+  ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
+  if (appState.trajectoryPoints.length > 0) {
+    drawTrajectory(appState.trajectoryPoints);
   }
-
-  ctx.stroke(); // Actually draw the line on screen
-
-  // Draw a dot at each point
-  points.forEach(function(point) {
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 6, 0, Math.PI * 2); // Small circle
-    ctx.fillStyle = '#ffdd00'; // Yellow dot
-    ctx.fill();
-  });
+  drawStumps();
 }
 
-// Draw the example trajectory when the page loads
-drawTrajectory(exampleTrajectory);
+leftStumpSlider.addEventListener('input',   updateStumpsFromSliders);
+rightStumpSlider.addEventListener('input',  updateStumpsFromSliders);
+topStumpSlider.addEventListener('input',    updateStumpsFromSliders);
+bottomStumpSlider.addEventListener('input', updateStumpsFromSliders);
 
-// ---- STEP D: SAVE CLIP BUTTON ----
-
-saveClipBtn.addEventListener('click', function() {
-  alert('💾 Clip saved to your device! (Full save feature coming soon)');
-  addClipToHistory('Saved Clip ' + (clipList.children.length + 1));
-});
-
-// ---- STEP E: DELIVERY HISTORY (Last 6 clips) ----
-
-// This function adds a clip entry to the "Last 6 Deliveries" panel
-function addClipToHistory(clipName) {
-  // Only keep the last 6 deliveries
-  if (clipList.children.length >= 6) {
-    clipList.removeChild(clipList.firstChild); // Remove oldest clip
-  }
-
-  // Create a new entry
-  const clipEntry = document.createElement('div');
-  clipEntry.style.padding = '8px';
-  clipEntry.style.margin = '4px';
-  clipEntry.style.background = '#0f3460';
-  clipEntry.style.borderRadius = '6px';
-  clipEntry.textContent = '🎬 ' + clipName;
-
-  clipList.appendChild(clipEntry); // Add it to the list
-}
-// =============================================
-// PHASE 5 — CONNECTING TO THE BACKEND
-// =============================================
-
-// This is your backend's address — where we send data to
-const BACKEND_URL = 'http://localhost:5000';
-
-// ---- FUNCTION: Send trajectory data to the backend ----
-async function sendTrajectoryToBackend(deliveryId, trajectoryPoints) {
-
-  // Tell the user something is happening
-  console.log('📡 Sending trajectory to backend...');
+// ---- Save Calibration to Backend ----
+document.getElementById('saveCalibrationBtn').addEventListener('click', async function () {
+  const config = {
+    left_stump:   { x: appState.stumps.leftX   },
+    right_stump:  { x: appState.stumps.rightX  },
+    top_stump:    { y: appState.stumps.topY     },
+    bottom_stump: { y: appState.stumps.bottomY  }
+  };
 
   try {
-    // Build the data package to send
-    const dataToSend = {
-      delivery_id: deliveryId,
-      coordinates: trajectoryPoints.map(function(point, index) {
-        return {
-          x:         point.x,
-          y:         point.y,
-          timestamp: index * 0.1   // Fake timestamps: 0.0, 0.1, 0.2 etc.
-        };
-      })
-    };
-
-    // Send the data to the backend using fetch
-    const response = await fetch(BACKEND_URL + '/api/trajectory', {
-      method:  'POST',                          // We are SENDING data
-      headers: { 'Content-Type': 'application/json' }, // Tell backend it's JSON
-      body:    JSON.stringify(dataToSend)        // Convert data to text format
+    const response = await fetch(BACKEND_URL + '/api/stumps', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(config)
     });
-
-    // Wait for the backend's reply
     const result = await response.json();
-    console.log('✅ Backend replied:', result.message);
-
-    // Show a success message on screen
-    showStatusMessage('✅ Trajectory sent! Delivery: ' + deliveryId);
-        // If the backend returned an LBW result, display it on canvas
-    if (result && result.lbw_result) {
-      displayLBWVerdict(result.lbw_result);
-    }
-
-
-    return result;
-
+    showStatusMessage('📐 ' + result.message);
   } catch (error) {
-    // Something went wrong — show an error
-    console.error('❌ Could not reach backend:', error);
-    showStatusMessage('❌ Backend not reachable. Is it running?');
+    showStatusMessage('❌ Could not save calibration');
   }
-}
+});
 
-// ---- FUNCTION: Show a small status message on screen ----
+// =============================================
+// SECTION 8 — STATUS MESSAGE POPUP
+// =============================================
 function showStatusMessage(message) {
-  // Check if a status box already exists
-  let statusBox = document.getElementById('statusMessage');
-
-  // If not, create one
-  if (!statusBox) {
-    statusBox = document.createElement('div');
-    statusBox.id = 'statusMessage';
-    statusBox.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #00d4aa;
-      color: #1a1a2e;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-weight: bold;
-      font-size: 14px;
-      z-index: 1000;
-    `;
-    document.body.appendChild(statusBox);
+  let box = document.getElementById('statusMessage');
+  if (!box) {
+    box    = document.createElement('div');
+    box.id = 'statusMessage';
+    document.body.appendChild(box);
   }
+  box.textContent = message;
+  box.style.opacity = '1';
 
-  statusBox.textContent = message;
-
-  // Hide it after 3 seconds
-  setTimeout(function() {
-    statusBox.textContent = '';
+  clearTimeout(box._timer);
+  box._timer = setTimeout(function () {
+    box.style.opacity = '0';
   }, 3000);
 }
 
-// ---- FUNCTION: Load and display last 6 deliveries from backend ----
-async function loadDeliveryHistory() {
-  try {
-    const response = await fetch(BACKEND_URL + '/api/deliveries');
-    const data     = await response.json();
-
-    // Clear the current list
-    clipList.innerHTML = '';
-
-    // Add each delivery to the panel
-    data.deliveries.forEach(function(delivery) {
-      addClipToHistory(delivery.delivery_id + ' (' + delivery.total_points + ' pts)');
-    });
-
-    console.log('📋 Loaded', data.total_stored, 'deliveries from backend');
-
-  } catch (error) {
-    console.error('❌ Could not load deliveries:', error);
-  }
-}
-
-// ---- TEST BUTTON: Send example trajectory to backend ----
-// Add a test button to the page automatically
-const testBtn = document.createElement('button');
-testBtn.textContent = '🧪 Test: Send Trajectory to Backend';
-testBtn.style.background = '#ff6b35';
-testBtn.addEventListener('click', async function() {
-  const deliveryId = 'del_' + Date.now(); // Unique ID using current time
-  await sendTrajectoryToBackend(deliveryId, exampleTrajectory);
-  await loadDeliveryHistory(); // Refresh the delivery list
-});
-
-// Add the test button to the page
-document.querySelector('.action-buttons').appendChild(testBtn);
-
-// Load delivery history when page first opens
-loadDeliveryHistory();
 // =============================================
-// PHASE 6 — LBW VERDICT DISPLAY ON CANVAS
+// SECTION 9 — STARTUP
 // =============================================
-
-// ---- Draw the stumps on the canvas ----
-function drawStumps() {
-  // Stump positions — should match backend STUMP_CONFIG
-  const leftX   = 290;
-  const rightX  = 350;
-  const topY    = 160;
-  const bottomY = 300;
-
-  ctx.strokeStyle = '#ffffff'; // White stumps
-  ctx.lineWidth   = 4;
-
-  // Draw 3 stumps (left, middle, right)
-  const stumpPositions = [leftX, (leftX + rightX) / 2, rightX];
-
-  stumpPositions.forEach(function(x) {
-    ctx.beginPath();
-    ctx.moveTo(x, topY);    // Top of stump
-    ctx.lineTo(x, bottomY); // Bottom of stump
-    ctx.stroke();
-  });
-
-  // Draw the bails (the little pieces on top)
-  ctx.beginPath();
-  ctx.moveTo(leftX,  topY);
-  ctx.lineTo(rightX, topY);
-  ctx.strokeStyle = '#ffdd00'; // Yellow bails
-  ctx.lineWidth   = 3;
-  ctx.stroke();
-}
-
-// ---- Show the LBW verdict as a big overlay on the canvas ----
-function displayLBWVerdict(lbwResult) {
-  // First redraw the trajectory + stumps
-  drawTrajectory(exampleTrajectory);
-  drawStumps();
-
-  // Choose colour based on result
-  const isOut      = lbwResult.prediction.includes('OUT -');
-  const bgColour   = isOut ? 'rgba(255, 0, 0, 0.75)' : 'rgba(0, 200, 100, 0.75)';
-  const textColour = '#ffffff';
-
-  // Draw a coloured box at the top of the canvas
-  ctx.fillStyle = bgColour;
-  ctx.fillRect(0, 0, canvas.width, 80); // Box across top
-
-  // Draw the verdict text
-  ctx.fillStyle  = textColour;
-  ctx.font       = 'bold 28px Arial';
-  ctx.textAlign  = 'center';
-  ctx.fillText(lbwResult.prediction, canvas.width / 2, 35);
-
-  // Draw the confidence text
-  ctx.font      = '16px Arial';
-  ctx.fillText(
-    'Confidence: ' + lbwResult.confidence + '%  |  ' + lbwResult.reason,
-    canvas.width / 2,
-    62
-  );
-
-  // Reset text alignment
-  ctx.textAlign = 'left';
-
-  // Also show the status message
-  showStatusMessage(
-    (isOut ? '🔴 OUT!' : '🟢 NOT OUT!') +
-    ' — ' + lbwResult.confidence + '% confident'
-  );
-}
-
-// ---- Draw stumps when page loads ----
+// When the page first loads:
+resizeCanvas();
 drawStumps();
+loadDeliveryHistory();
+console.log('🏏 Cricket DRS App loaded!');
+

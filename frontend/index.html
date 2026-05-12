@@ -1,49 +1,132 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- This section sets up the page — it won't be visible to users -->
   <meta charset="UTF-8" />
+  <!-- This line makes the app look correct on mobile phones -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cricket DRS App</title>
-  <!-- This links our style file (CSS) to make things look nice -->
+  <title>🏏 Cricket DRS App</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
 
-  <!-- The main heading users will see -->
-  <h1>🏏 Cricket DRS Review System</h1>
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <h1>🏏 Cricket DRS</h1>
+    <p class="subtitle">Low-Cost Decision Review System</p>
+  </header>
 
-  <!-- Mode selector: Game Mode or Coaching Mode -->
+  <!-- ===== MODE BUTTONS ===== -->
   <div class="mode-buttons">
     <button id="gameModeBtn">🎮 Game Mode</button>
     <button id="coachingModeBtn">📋 Coaching Mode</button>
   </div>
 
-  <!-- Video player: shows the cricket delivery clip -->
-  <div class="video-container">
-    <video id="videoPlayer" width="100%" controls>
-      Your browser does not support video.
-    </video>
+  <!-- ===== MAIN DISPLAY AREA ===== -->
+  <div class="display-area">
+
+    <!-- Video player -->
+    <div class="video-wrapper">
+      <video id="videoPlayer" playsinline>
+        Your browser does not support video.
+      </video>
+    </div>
+
+    <!-- Trajectory canvas — drawn ON TOP of video visually -->
+    <canvas id="trajectoryCanvas"></canvas>
+
+    <!-- Hidden canvas used only for reading video frames (user won't see this) -->
+    <canvas id="frameCanvas" style="display:none;"></canvas>
+
   </div>
 
-  <!-- Canvas: this is where the ball trajectory will be drawn -->
-  <!-- Think of this like a transparent drawing layer ON TOP of the video -->
-  <canvas id="trajectoryCanvas" width="640" height="360"></canvas>
+  <!-- ===== BALL COLOR SELECTION ===== -->
+<div class="color-selection-panel">
+  <h3>🎨 Select Ball Color</h3>
+  <p class="color-hint">Choose the color of the ball you want to detect</p>
 
-  <!-- Buttons for user actions -->
+  <!-- Preset Color Buttons -->
+  <div class="color-preset-buttons">
+
+    <button class="color-btn active-color" 
+            id="colorRed" 
+            data-color="red"
+            title="Red Cricket Ball">
+      🔴 Red
+    </button>
+
+    <button class="color-btn" 
+            id="colorWhite" 
+            data-color="white"
+            title="White Cricket Ball (ODI/T20)">
+      ⚪ White
+    </button>
+
+    <button class="color-btn" 
+            id="colorGreen" 
+            data-color="green"
+            title="Green Tennis/Training Ball">
+      🟢 Green
+    </button>
+
+    <button class="color-btn" 
+            id="colorCustom" 
+            data-color="custom"
+            title="Pick any custom color">
+      🎨 Custom
+    </button>
+
+  </div>
+
+  <!-- Custom Color Picker (hidden until Custom is selected) -->
+  <div id="customColorPicker" style="display:none;">
+    <label for="colorPickerInput">Pick your ball color:</label>
+    <input type="color" id="colorPickerInput" value="#ff0000" />
+    <span id="selectedColorPreview">Selected: #ff0000</span>
+  </div>
+
+  <!-- Currently selected color display -->
+  <div class="current-color-display">
+    <span>Currently detecting:</span>
+    <span id="currentColorBadge" class="color-badge red-badge">🔴 Red Ball</span>
+  </div>
+</div>
+
+<!-- ===== BALL DETECTION CONTROLS ===== -->
+<div class="detection-controls">
+  <button id="startDetectionBtn">🔍 Start Ball Detection</button>
+  <button id="stopDetectionBtn" disabled>⏹ Stop Detection</button>
+  <span id="detectionStatus">Detection: Idle</span>
+</div>
+
+
+  <!-- ===== ACTION BUTTONS ===== -->
   <div class="action-buttons">
     <button id="saveClipBtn">💾 Save Clip</button>
     <button id="uploadClipBtn">📂 Upload Clip</button>
+    <button id="clearTrajectoryBtn">🗑 Clear Drawing</button>
   </div>
 
-  <!-- A small area to show the last 6 deliveries -->
+  <!-- ===== STUMP CALIBRATION PANEL ===== -->
+  <div class="calibration-panel" id="calibrationPanel">
+    <h3>📐 Camera Calibration</h3>
+    <p>Drag the sliders to align the stumps with your video</p>
+    <label>Left Stump X:  <input type="range" id="leftStumpX"  min="100" max="400" value="290" /></label>
+    <label>Right Stump X: <input type="range" id="rightStumpX" min="100" max="400" value="350" /></label>
+    <label>Top Stump Y:   <input type="range" id="topStumpY"   min="50"  max="250" value="160" /></label>
+    <label>Bottom Stump Y:<input type="range" id="bottomStumpY" min="150" max="400" value="300" /></label>
+    <button id="saveCalibrationBtn">✅ Save Calibration</button>
+  </div>
+
+  <!-- ===== DELIVERY HISTORY ===== -->
   <div class="delivery-history">
-    <h3>Last 6 Deliveries</h3>
+    <h3>📋 Last 6 Deliveries</h3>
     <div id="clipList"></div>
   </div>
 
-  <!-- This links our JavaScript file (the app's logic) -->
+  <!-- JavaScript file -->
   <script src="app.js"></script>
+
 </body>
 </html>
+

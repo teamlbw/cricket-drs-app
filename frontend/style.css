@@ -1,87 +1,363 @@
-/* This styles the whole page */
-body {
-  font-family: Arial, sans-serif; /* Easy-to-read font */
-  background-color: #1a1a2e;     /* Dark cricket-themed background */
-  color: #ffffff;                 /* White text */
-  text-align: center;
-  padding: 20px;
+/* =============================================
+   CRICKET DRS APP — Main Stylesheet
+   Mobile-first: looks great on phones & desktop
+   ============================================= */
+
+/* ---- Reset & Base ---- */
+* {
+  box-sizing: border-box; /* Makes sizing predictable */
   margin: 0;
+  padding: 0;
 }
 
-/* Title styling */
-h1 {
-  color: #00d4aa; /* Cricket green */
-  font-size: 28px;
-  margin-bottom: 20px;
+body {
+  font-family: Arial, sans-serif;
+  background-color: #1a1a2e;
+  color: #ffffff;
+  text-align: center;
+  padding: 12px;
+  min-height: 100vh; /* Full screen height */
 }
 
-/* Mode buttons area */
+/* ---- Header ---- */
+.app-header {
+  margin-bottom: 16px;
+}
+
+.app-header h1 {
+  color: #00d4aa;
+  font-size: 26px;
+}
+
+.subtitle {
+  color: #aaaaaa;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* ---- Mode Buttons ---- */
 .mode-buttons {
-  margin-bottom: 20px;
+  display: flex;           /* Side by side */
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;         /* Stack on small screens */
+  margin-bottom: 16px;
 }
 
-/* General button style */
+/* ---- All Buttons ---- */
 button {
   background-color: #00d4aa;
   color: #1a1a2e;
   border: none;
-  padding: 12px 24px;
-  margin: 8px;
-  border-radius: 8px;       /* Rounded corners */
-  font-size: 16px;
-  cursor: pointer;          /* Hand cursor on hover */
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  /* Minimum touch target size for mobile: */
+  min-width: 44px;
+  min-height: 44px;
 }
 
-/* Button hover effect */
 button:hover {
   background-color: #00a887;
 }
 
-/* Video player container */
-.video-container {
+button:active {
+  transform: scale(0.97); /* Tiny press effect */
+}
+
+button:disabled {
+  background-color: #555555;
+  color: #999999;
+  cursor: not-allowed;
+}
+
+/* ---- Main Display Area (Video + Canvas) ---- */
+.display-area {
+  position: relative;       /* Allows canvas to overlay video */
   max-width: 640px;
-  margin: 0 auto 10px;
+  width: 100%;
+  margin: 0 auto 12px;
+}
+
+/* Video player — fills the display area */
+.video-wrapper {
+  width: 100%;
   border: 3px solid #00d4aa;
   border-radius: 8px;
   overflow: hidden;
+  background: #000;
 }
 
-/* The drawing canvas — sits below the video for now */
-#trajectoryCanvas {
-  border: 2px dashed #00d4aa;
+#videoPlayer {
+  width: 100%;
   display: block;
-  margin: 0 auto 20px;
-  background-color: rgba(0, 0, 0, 0.5);
+  max-height: 360px;
+  object-fit: contain;
 }
 
-/* Last 6 deliveries panel */
+/* Trajectory canvas — sits on top of the video */
+#trajectoryCanvas {
+  position: absolute;      /* Overlays the video */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;    /* Clicks pass through to video */
+  border-radius: 8px;
+}
+
+/* ---- Detection Controls ---- */
+.detection-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+#detectionStatus {
+  font-size: 13px;
+  color: #aaaaaa;
+  padding: 6px 12px;
+  background: #16213e;
+  border-radius: 6px;
+}
+
+/* ---- Action Buttons ---- */
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* ---- Calibration Panel ---- */
+.calibration-panel {
+  background: #16213e;
+  border: 2px solid #00d4aa;
+  border-radius: 10px;
+  padding: 16px;
+  max-width: 640px;
+  margin: 0 auto 16px;
+  text-align: left;
+}
+
+.calibration-panel h3 {
+  color: #00d4aa;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.calibration-panel p {
+  color: #aaaaaa;
+  font-size: 13px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+/* Each slider row */
+.calibration-panel label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+  gap: 10px;
+}
+
+/* Sliders fill available space */
+.calibration-panel input[type="range"] {
+  flex: 1;
+  accent-color: #00d4aa; /* Green slider thumb */
+}
+
+#saveCalibrationBtn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* ---- Delivery History ---- */
 .delivery-history {
-  margin-top: 20px;
   background: #16213e;
   padding: 15px;
   border-radius: 10px;
   max-width: 640px;
-  margin-left: auto;
-  margin-right: auto;
-}
-/* Status message popup */
-#statusMessage {
-  transition: opacity 0.3s ease;
+  margin: 0 auto 80px; /* Bottom margin for mobile scroll */
 }
 
-/* Canvas gets a shadow to stand out */
-#trajectoryCanvas {
-  box-shadow: 0 0 20px rgba(0, 212, 170, 0.4);
+.delivery-history h3 {
+  color: #00d4aa;
+  margin-bottom: 10px;
 }
 
-/* Test button special colour */
-button[style*="ff6b35"] {
-  font-weight: bold;
-}
-
-/* Delivery history items */
-#clipList div:hover {
-  background: #1a4a7e !important;
+/* Individual delivery entry */
+#clipList div {
+  padding: 10px;
+  margin: 5px 0;
+  background: #0f3460;
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: left;
   cursor: pointer;
   transition: background 0.2s;
 }
+
+#clipList div:hover {
+  background: #1a4a7e;
+}
+
+/* ---- Status Message Popup ---- */
+#statusMessage {
+  position: fixed;
+  bottom: 20px;
+  right: 16px;
+  left: 16px;           /* Stretches on mobile */
+  max-width: 360px;
+  margin-left: auto;
+  background: #00d4aa;
+  color: #1a1a2e;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 14px;
+  z-index: 1000;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* ---- Tablet & Desktop Adjustments ---- */
+/* When screen is wider than 480px (tablet/desktop) */
+@media (min-width: 480px) {
+  .app-header h1 {
+    font-size: 32px;
+  }
+
+  #statusMessage {
+    left: auto;        /* Stick to the right on bigger screens */
+    min-width: 300px;
+  }
+}
+/* =============================================
+   COLOR SELECTION PANEL
+   ============================================= */
+
+.color-selection-panel {
+  background: #16213e;
+  border: 2px solid #00d4aa;
+  border-radius: 10px;
+  padding: 16px;
+  max-width: 640px;
+  margin: 0 auto 16px;
+  text-align: center;
+}
+
+.color-selection-panel h3 {
+  color: #00d4aa;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.color-hint {
+  color: #aaaaaa;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+/* ---- Preset Color Buttons Row ---- */
+.color-preset-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+/* ---- Individual Color Button ---- */
+.color-btn {
+  background: #0f3460;
+  color: #ffffff;
+  border: 2px solid transparent;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 90px;
+}
+
+.color-btn:hover {
+  border-color: #00d4aa;
+  background: #1a4a7e;
+}
+
+/* Active/selected color button has a bright border */
+.active-color {
+  border-color: #00d4aa !important;
+  background: #1a4a7e !important;
+  box-shadow: 0 0 10px rgba(0, 212, 170, 0.5);
+}
+
+/* ---- Custom Color Picker Area ---- */
+#customColorPicker {
+  background: #0f3460;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#customColorPicker label {
+  color: #ffffff;
+  font-size: 14px;
+}
+
+/* The color input circle */
+#colorPickerInput {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  background: none;
+}
+
+#selectedColorPreview {
+  color: #00d4aa;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+/* ---- Current Color Display Badge ---- */
+.current-color-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #aaaaaa;
+  margin-top: 8px;
+}
+
+.color-badge {
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* Badge colors per ball type */
+.red-badge    { background: rgba(220, 50, 50, 0.3);  color: #ff6666; border: 1px solid #ff4444; }
+.white-badge  { background: rgba(220, 220, 220, 0.2); color: #ffffff; border: 1px solid #cccccc; }
+.green-badge  { background: rgba(50, 200, 50, 0.2);  color: #66ff66; border: 1px solid #44cc44; }
+.custom-badge { background: rgba(200, 100, 255, 0.2); color: #dd88ff; border: 1px solid #aa44ff; }
