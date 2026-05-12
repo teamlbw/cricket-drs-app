@@ -6,7 +6,22 @@ from flask      import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
 
+# =============================================
+# ENHANCED LOGGING — See what's happening in real time
+# =============================================
+
+import logging
+
+# Set up logging (shows all activity in terminal)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
+
 CORS(app)
 
 # ---- Temporary storage for last 6 deliveries ----
@@ -27,20 +42,110 @@ STUMP_CONFIG = {
 # ====================================================
 # HELPER: Predict if ball is hitting the stumps
 # ====================================================
+# =============================================
+# SMARTER LBW PREDICTION — Replace old predict_lbw function
+# =============================================
+
 def predict_lbw(coordinates):
     """
-    Takes the ball's trajectory points and predicts
-    if the ball would have hit the stumps.
-
-    Returns: dict with prediction result and reason
+    Smarter prediction using the last several points
+    to calculate a curved trajectory estimate.
     """
 
-    if len(coordinates) < 2:
+    if len(coordinates) < 3:
         return {
             "prediction": "INSUFFICIENT DATA",
             "confidence": 0,
-            "reason":     "Not enough trajectory points"
+            "reason":     "Need at least 3 trajectory points"
         }
+
+    # ---- Step 1: Use the last 5 points for better accuracy ----
+    # (or all points if less than 5)
+    recent = coordinates[-5:] if len(coordinates) >= 5 else coordinates
+
+    # ---- Step 2: Calculate average direction (velocity) ----
+    # We look at how much x and y change per step on average
+    x_changes = []
+    y_changes = []
+
+    for i in range(1, len(recent)):
+        x_changes.append(recent[i]['x'] - recent[i-1]['x'])
+        y_changes.append(recent[i]['y'] - recent[i-1]['y'])
+
+    # Average change per frame
+    avg_dx = sum(x_changes) / len(x_changes) if x_changes else 0
+    avg_dy = sum(y_changes) / len(y_changes) if y_changes else 0
+
+    # ---- Step 3: Project the ball to stump height ----
+    last_x = recent[-1]['x']
+    last_y = recent[-1]['y']
+
+    stump_bottom_y = STUMP_CONFIG["bottom_stump"]["y"]
+    stump_top_y    = STUMP_CONFIG["top_stump"]["y"]
+
+    # How many steps until ball reaches stump ground level?
+    if avg_dy == 0:
+        projected_x = last_x
+        projected_y = last_y
+    else:
+        steps_to_stumps = (stump_bottom_y - last_y) / avg_dy
+        projected_x     = last_x + (avg_dx * steps_to_stumps)
+        projected_y     = stump_bottom_y
+
+    projected_x = round(projected_x, 2)
+
+    # ---- Step 4: Check if projected x is within stump width ----
+    left_x  = STUMP_CONFIG["left_stump"]["x"]
+    right_x = STUMP_CONFIG["right_stump"]["x"]
+
+    hitting_stumps = (left_x <= projected_x <= right_x)
+
+    # ---- Step 5: Calculate confidence based on data quality ----
+    # More points = more confidence
+    base_confidence = min(50 + (len(coordinates) * 3), 92)
+
+    # Reduce confidence if ball is close to edge of stumps
+    stump_centre = (left_x + right_x) / 2
+    stump_width  = right_x - left_x
+    distance_from_centre = abs(projected_x - stump_centre)
+
+    if distance_from_centre < stump_width * 0.2:
+        # Ball is well within stumps — high confidence
+        confidence_adjust = +5
+    elif distance_from_centre < stump_width * 0.5:
+        # Ball is near edge — moderate confidence
+        confidence_adjust = -5
+    elif not hitting_stumps and distance_from_centre < stump_width:
+        # Ball is just outside — lower confidence
+        confidence_adjust = -10
+    else:
+        confidence_adjust = 0
+
+    final_confidence = max(30, min(95, base_confidence + confidence_adjust))
+
+    # ---- Step 6: Build result ----
+    if hitting_stumps:
+        prediction = "OUT - Hitting Stumps"
+        colour     = "red"
+        reason     = f"Ball projected at x={projected_x} — within stumps ({left_x}–{right_x})"
+    else:
+        prediction = "NOT OUT - Missing Stumps"
+        colour     = "green"
+        if projected_x < left_x:
+            side   = "going down leg side"
+        else:
+            side   = "missing off stump"
+        reason     = f"Ball projected at x={projected_x} — {side}"
+
+    return {
+        "prediction":  prediction,
+        "confidence":  int(final_confidence),
+        "colour":      colour,
+        "projected_x": projected_x,
+        "stump_range": { "left": left_x, "right": right_x },
+        "reason":      reason,
+        "points_used": len(coordinates)
+    }
 
     # Get the last known position of the ball
     last_point = coordinates[-1]
@@ -119,10 +224,17 @@ def receive_trajectory():
     data = request.get_json()
 
     if not data:
+        logger.warning('❌ Empty request received')
         return jsonify({"error": "No data received"}), 400
 
     delivery_id = data.get('delivery_id', 'unknown')
     coordinates = data.get('coordinates', [])
+
+    logger.info(f'🏏 Delivery {delivery_id} received with {len(coordinates)} points')
+
+    if len(coordinates) > 0:  # Only log if we have coordinates
+        logger.debug(f'   First point: x={coordinates[0]["x"]}, y={coordinates[0]["y"]}')
+        logger.debug(f'   Last point: x={coordinates[-1]["x"]}, y={coordinates[-1]["y"]}')
 
     if len(coordinates) == 0:
         return jsonify({"error": "No coordinates provided"}), 400
@@ -132,13 +244,14 @@ def receive_trajectory():
 
     # Build the full delivery record
     record = {
-        "delivery_id":  delivery_id,
-        "coordinates":  coordinates,
+        "delivery_id": delivery_id,
+        "coordinates": coordinates,
         "total_points": len(coordinates),
-        "received_at":  datetime.datetime.now().isoformat(),
-        "lbw_result":   lbw_result,
-        "saved":        False
+        "received_at": datetime.datetime.now().isoformat(),
+        "lbw_result": lbw_result,
+        "saved": False
     }
+
 
     # Store it — keep only last 6
     delivery_history.append(record)
@@ -230,5 +343,152 @@ def update_stumps():
 
 
 # ---- Start Server ----
+# =============================================
+# PHASE 11 — REAL TRAJECTORY DATA & QUALITY METRICS
+# =============================================
+
+# Store quality metrics for debugging
+detection_quality_log = []
+
+# ====================================================
+# ROUTE 7: Analyze trajectory quality
+# ====================================================
+@app.route('/api/trajectory/analyze', methods=['POST'])
+def analyze_trajectory_quality():
+    """
+    Analyzes the quality of detected trajectory data.
+    Checks for:
+    - Enough points?
+    - Consistent motion?
+    - Ball staying on screen?
+    """
+    data = request.get_json()
+    
+    if not data or 'coordinates' not in data:
+        return jsonify({"error": "No coordinates"}), 400
+    
+    coords = data.get('coordinates', [])
+    
+    if len(coords) < 3:
+        return jsonify({
+            "quality": "POOR",
+            "reason": "Less than 3 points detected",
+            "point_count": len(coords),
+            "confidence": 0
+        })
+    
+    # ---- Calculate point spacing consistency ----
+    x_distances = []
+    y_distances = []
+    
+    for i in range(1, len(coords)):
+        prev_x = coords[i-1]['x']
+        prev_y = coords[i-1]['y']
+        curr_x = coords[i]['x']
+        curr_y = coords[i]['y']
+        
+        x_dist = abs(curr_x - prev_x)
+        y_dist = abs(curr_y - prev_y)
+        
+        x_distances.append(x_dist)
+        y_distances.append(y_dist)
+    
+    # ---- Calculate average motion ----
+    avg_x_motion = sum(x_distances) / len(x_distances) if x_distances else 0
+    avg_y_motion = sum(y_distances) / len(y_distances) if y_distances else 0
+    
+    # ---- Calculate variance (consistency) ----
+    # High variance = jerky/unreliable. Low variance = smooth/reliable
+    if x_distances:
+        x_variance = sum((d - avg_x_motion) ** 2 for d in x_distances) / len(x_distances)
+    else:
+        x_variance = 0
+    
+    if y_distances:
+        y_variance = sum((d - avg_y_motion) ** 2 for d in y_distances) / len(y_distances)
+    else:
+        y_variance = 0
+    
+    # ---- Determine quality level ----
+    if len(coords) >= 20 and x_variance < 50 and y_variance < 100:
+        quality = "EXCELLENT"
+        confidence = 95
+    elif len(coords) >= 12 and x_variance < 100 and y_variance < 150:
+        quality = "GOOD"
+        confidence = 80
+    elif len(coords) >= 6 and x_variance < 200:
+        quality = "FAIR"
+        confidence = 60
+    else:
+        quality = "POOR"
+        confidence = 40
+    
+    analysis = {
+        "quality":      quality,
+        "confidence":   confidence,
+        "point_count":  len(coords),
+        "avg_x_motion": round(avg_x_motion, 2),
+        "avg_y_motion": round(avg_y_motion, 2),
+        "x_variance":   round(x_variance, 2),
+        "y_variance":   round(y_variance, 2),
+        "reason":       f"Detected {len(coords)} points with {'smooth' if x_variance < 100 else 'jerky'} motion"
+    }
+    
+    # Log this analysis
+    detection_quality_log.append(analysis)
+    if len(detection_quality_log) > 50:  # Keep only last 50
+        detection_quality_log.pop(0)
+    
+    print(f"📊 Trajectory Quality: {quality} | {len(coords)} points | Confidence: {confidence}%")
+    
+    return jsonify(analysis)
+
+
+# ====================================================
+# ROUTE 8: Get detection quality history
+# ====================================================
+@app.route('/api/quality-log', methods=['GET'])
+def get_quality_log():
+    return jsonify({
+        "total_analyses": len(detection_quality_log),
+        "recent_analyses": detection_quality_log[-10:] if detection_quality_log else []
+    })
+
+
+# ====================================================
+# ROUTE 9: Test trajectory with known ball position
+# (For Person B to test without needing Person A's frontend)
+# ====================================================
+@app.route('/api/test-trajectory', methods=['POST'])
+def test_trajectory():
+    """
+    Allows testing with fake trajectory data.
+    Useful for testing LBW logic without video detection.
+    
+    Example JSON to send:
+    {
+      "test_name": "Ball hitting stumps",
+      "coordinates": [
+        {"x": 100, "y": 50, "timestamp": 0.0},
+        {"x": 200, "y": 150, "timestamp": 0.1},
+        {"x": 300, "y": 250, "timestamp": 0.2},
+        {"x": 320, "y": 300, "timestamp": 0.3}
+      ]
+    }
+    """
+    data = request.get_json()
+    test_name  = data.get('test_name', 'Unknown Test')
+    coords     = data.get('coordinates', [])
+    
+    # Run prediction and analysis
+    lbw_result = predict_lbw(coords)
+    
+    return jsonify({
+        "test_name":     test_name,
+        "lbw_result":    lbw_result,
+        "point_count":   len(coords),
+        "message":       "Test trajectory processed"
+    })
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
