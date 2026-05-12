@@ -39,6 +39,58 @@ STUMP_CONFIG = {
     "bottom_stump": {"y": 300},   # Bottom of stumps (ground)
 }
 
+# =============================================
+# BALL COLOR CONFIGURATION
+# HSV ranges for each ball color
+# HSV = Hue (color), Saturation (intensity), Value (brightness)
+# This is used for analysis and logging
+# =============================================
+
+BALL_COLOR_CONFIG = {
+    "red": {
+        "label":      "Red Cricket Ball",
+        "rgb_ranges": {
+            "r_min": 150, "r_max": 255,
+            "g_min": 0,   "g_max": 90,
+            "b_min": 0,   "b_max": 90
+        },
+        "description": "Standard red cricket ball (Tests/County)"
+    },
+    "white": {
+        "label":      "White Cricket Ball",
+        "rgb_ranges": {
+            "r_min": 200, "r_max": 255,
+            "g_min": 200, "g_max": 255,
+            "b_min": 200, "b_max": 255
+        },
+        "description": "White cricket ball (ODI/T20 matches)"
+    },
+    "green": {
+        "label":      "Green Tennis Ball",
+        "rgb_ranges": {
+            "r_min": 0,   "r_max": 100,
+            "g_min": 130, "g_max": 255,
+            "b_min": 0,   "b_max": 100
+        },
+        "description": "Green tennis/training ball"
+    },
+    "custom": {
+        "label":      "Custom Color Ball",
+        "rgb_ranges": {
+            # These are updated dynamically when user picks a color
+            "r_min": 0, "r_max": 255,
+            "g_min": 0, "g_max": 255,
+            "b_min": 0, "b_max": 255
+        },
+        "custom_hex": "#ff0000",
+        "custom_rgb": {"r": 255, "g": 0, "b": 0},
+        "description": "User-defined custom ball color"
+    }
+}
+
+# Currently active ball color (default: red)
+active_ball_color = "red"
+
 # ====================================================
 # HELPER: Predict if ball is hitting the stumps
 # ====================================================
@@ -249,6 +301,7 @@ def receive_trajectory():
         "total_points": len(coordinates),
         "received_at": datetime.datetime.now().isoformat(),
         "lbw_result": lbw_result,
+        "ball_color":   data.get('ball_color', active_ball_color),
         "saved": False
     }
 
@@ -488,6 +541,106 @@ def test_trajectory():
         "lbw_result":    lbw_result,
         "point_count":   len(coords),
         "message":       "Test trajectory processed"
+    })
+
+# ====================================================
+# ROUTE: Get current ball color config
+# ====================================================
+@app.route('/api/ball-color', methods=['GET'])
+def get_ball_color():
+    """Returns the currently selected ball color and its settings"""
+    color_info = BALL_COLOR_CONFIG.get(active_ball_color, BALL_COLOR_CONFIG["red"])
+    return jsonify({
+        "active_color":  active_ball_color,
+        "color_label":   color_info["label"],
+        "description":   color_info["description"],
+        "rgb_ranges":    color_info["rgb_ranges"],
+        "all_colors":    list(BALL_COLOR_CONFIG.keys())
+    })
+
+
+# ====================================================
+# ROUTE: Set ball color (called by frontend when user picks a color)
+# ====================================================
+@app.route('/api/ball-color', methods=['POST'])
+def set_ball_color():
+    """
+    Receives the selected ball color from frontend.
+
+    Expected JSON:
+    {
+      "color_name": "red",         (or "white", "green", "custom")
+      "custom_rgb": {              (only required when color_name is "custom")
+        "r": 100,
+        "g": 200,
+        "b": 50,
+        "hex": "#64c832"
+      }
+    }
+    """
+    global active_ball_color, BALL_COLOR_CONFIG
+
+    data       = request.get_json()
+    color_name = data.get('color_name', 'red').lower()
+    custom_rgb = data.get('custom_rgb', None)
+
+    # Validate that the color is one we support
+    if color_name not in BALL_COLOR_CONFIG:
+        return jsonify({
+            "error":   f"Unknown color '{color_name}'",
+            "allowed": list(BALL_COLOR_CONFIG.keys())
+        }), 400
+
+    # If custom color, update the custom ranges dynamically
+    if color_name == 'custom' and custom_rgb:
+        r         = int(custom_rgb.get('r', 255))
+        g         = int(custom_rgb.get('g', 0))
+        b         = int(custom_rgb.get('b', 0))
+        tolerance = 60  # How close a pixel must be to match
+
+        # Update the custom color's RGB ranges
+        BALL_COLOR_CONFIG['custom']['rgb_ranges'] = {
+            "r_min": max(0,   r - tolerance),
+            "r_max": min(255, r + tolerance),
+            "g_min": max(0,   g - tolerance),
+            "g_max": min(255, g + tolerance),
+            "b_min": max(0,   b - tolerance),
+            "b_max": min(255, b + tolerance)
+        }
+        BALL_COLOR_CONFIG['custom']['custom_hex'] = custom_rgb.get('hex', '#ff0000')
+        BALL_COLOR_CONFIG['custom']['custom_rgb'] = {"r": r, "g": g, "b": b}
+
+        logger.info(f"🎨 Custom color set: RGB({r}, {g}, {b}) | Hex: {custom_rgb.get('hex')}")
+
+    # Set the active color
+    active_ball_color = color_name
+    color_info        = BALL_COLOR_CONFIG[color_name]
+
+    logger.info(f"🎨 Ball color changed to: {color_name} ({color_info['label']})")
+
+    return jsonify({
+        "message":      f"Ball color set to {color_name}",
+        "active_color": active_ball_color,
+        "color_label":  color_info["label"],
+        "rgb_ranges":   color_info["rgb_ranges"]
+    })
+
+
+# ====================================================
+# ROUTE: Get all available ball colors
+# ====================================================
+@app.route('/api/ball-colors', methods=['GET'])
+def get_all_colors():
+    """Returns all available ball colors and their settings"""
+    return jsonify({
+        "active_color":   active_ball_color,
+        "available_colors": {
+            name: {
+                "label":       info["label"],
+                "description": info["description"]
+            }
+            for name, info in BALL_COLOR_CONFIG.items()
+        }
     })
 
 if __name__ == '__main__':

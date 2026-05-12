@@ -128,6 +128,113 @@ print(f"🎬 Realistic delivery: {result['lbw_result']['prediction']}")
 print(f"✅ Points captured: {result['points_received']}")
 print(f"📊 Confidence: {result['lbw_result']['confidence']}%")
 
+# =============================================
+# COLOR SELECTION TESTS — Person B Phase B
+# =============================================
+
+print("\n\n" + "=" * 50)
+print("🎨 Ball Color Selection Tests")
+print("=" * 50)
+
+# ---- TEST 5: Set ball color to RED ----
+print("\n✅ TEST 5: Set ball color to RED")
+print("-" * 50)
+
+response = requests.post(
+    BACKEND_URL + '/api/ball-color',
+    json={"color_name": "red"}
+)
+result = response.json()
+print(f"Message: {result['message']}")
+print(f"Active Color: {result['active_color']}")
+print(f"RGB Ranges: R({result['rgb_ranges']['r_min']}-{result['rgb_ranges']['r_max']})")
+
+# ---- TEST 6: Set ball color to WHITE ----
+print("\n✅ TEST 6: Set ball color to WHITE")
+print("-" * 50)
+
+response = requests.post(
+    BACKEND_URL + '/api/ball-color',
+    json={"color_name": "white"}
+)
+result = response.json()
+print(f"Message: {result['message']}")
+print(f"Active Color: {result['active_color']}")
+print(f"RGB Ranges: R({result['rgb_ranges']['r_min']}-{result['rgb_ranges']['r_max']}) | G({result['rgb_ranges']['g_min']}-{result['rgb_ranges']['g_max']})")
+
+# ---- TEST 7: Set ball color to GREEN ----
+print("\n✅ TEST 7: Set ball color to GREEN")
+print("-" * 50)
+
+response = requests.post(
+    BACKEND_URL + '/api/ball-color',
+    json={"color_name": "green"}
+)
+result = response.json()
+print(f"Message: {result['message']}")
+print(f"Active Color: {result['active_color']}")
+print(f"RGB Ranges: G({result['rgb_ranges']['g_min']}-{result['rgb_ranges']['g_max']})")
+
+# ---- TEST 8: Set ball color to CUSTOM ----
+print("\n✅ TEST 8: Set ball color to CUSTOM (e.g. orange ball)")
+print("-" * 50)
+
+response = requests.post(
+    BACKEND_URL + '/api/ball-color',
+    json={
+        "color_name": "custom",
+        "custom_rgb": {
+            "r":   255,
+            "g":   140,
+            "b":   0,
+            "hex": "#ff8c00"
+        }
+    }
+)
+result = response.json()
+print(f"Message: {result['message']}")
+print(f"Active Color: {result['active_color']}")
+print(f"R range: {result['rgb_ranges']['r_min']}–{result['rgb_ranges']['r_max']}")
+print(f"G range: {result['rgb_ranges']['g_min']}–{result['rgb_ranges']['g_max']}")
+print(f"B range: {result['rgb_ranges']['b_min']}–{result['rgb_ranges']['b_max']}")
+
+# ---- TEST 9: Get current color ----
+print("\n✅ TEST 9: Get currently active ball color")
+print("-" * 50)
+
+response = requests.get(BACKEND_URL + '/api/ball-color')
+result   = response.json()
+print(f"Active Color: {result['active_color']}")
+print(f"Label: {result['color_label']}")
+print(f"Description: {result['description']}")
+
+# ---- TEST 10: Get ALL available colors ----
+print("\n✅ TEST 10: Get all available ball colors")
+print("-" * 50)
+
+response = requests.get(BACKEND_URL + '/api/ball-colors')
+result   = response.json()
+print(f"Currently selected: {result['active_color']}")
+print("All available colors:")
+for name, info in result['available_colors'].items():
+    print(f"  • {name:8} → {info['label']}")
+
+# ---- TEST 11: Invalid color (error handling) ----
+print("\n✅ TEST 11: Try invalid color (should give error)")
+print("-" * 50)
+
+response = requests.post(
+    BACKEND_URL + '/api/ball-color',
+    json={"color_name": "purple"}
+)
+result = response.json()
+print(f"Got error (expected): {result.get('error', 'No error - something is wrong!')}")
+print(f"Allowed colors: {result.get('allowed', [])}")
+
+print("\n" + "=" * 50)
+print("✅ ALL COLOR TESTS COMPLETE!")
+print("=" * 50)
+
 print("\n" + "=" * 50)
 print("✅ ALL TESTS COMPLETE!")
 print("=" * 50)
