@@ -3,7 +3,7 @@
 // =============================================
 
 // ---- BACKEND URL ----
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'https://cricket-drs-backend.onrender.com';
 
 // ---- GRAB ALL HTML ELEMENTS WE NEED ----
 const videoPlayer        = document.getElementById('videoPlayer');
