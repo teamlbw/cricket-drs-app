@@ -617,54 +617,509 @@ saveClipBtn.addEventListener('click', async function () {
 });
 
 // =============================================
-// SECTION 7 — CAMERA CALIBRATION (Drag Sliders)
+// STUMP CALIBRATION — Drag & Drop Corner System
 // =============================================
-const leftStumpSlider   = document.getElementById('leftStumpX');
-const rightStumpSlider  = document.getElementById('rightStumpX');
-const topStumpSlider    = document.getElementById('topStumpY');
-const bottomStumpSlider = document.getElementById('bottomStumpY');
 
-// Update stump drawing live as sliders move
-function updateStumpsFromSliders() {
-  appState.stumps.leftX   = parseInt(leftStumpSlider.value);
-  appState.stumps.rightX  = parseInt(rightStumpSlider.value);
-  appState.stumps.topY    = parseInt(topStumpSlider.value);
-  appState.stumps.bottomY = parseInt(bottomStumpSlider.value);
+// ---- Calibration State ----
+// Tracks everything about the calibration mode
+let calibState = {
+  isActive:       false,   // Is calibration mode on?
+  isDragging:     false,   // Is user currently dragging a handle?
+  activeHandle:   null,    // Which handle is being dragged? ('topLeft', 'topRight', etc.)
+  handleRadius:   14,      // Size of the draggable corner circles (pixels)
+  touchStartX:    0,       // For mobile touch support
+  touchStartY:    0
+};
 
-  // Redraw everything
+// ---- Default Stump Positions ----
+// These match the backend STUMP_CONFIG defaults
+const DEFAULT_STUMPS = {
+  leftX:   290,
+  rightX:  350,
+  topY:    160,
+  bottomY: 300
+};
+
+// ---- The 4 Corner Handles ----
+// Each handle has a name, and functions to get/set its x,y position
+// This design means: moving one handle only affects its corner
+function getHandles() {
+  return {
+    topLeft: {
+      name: 'topLeft',
+      x:    appState.stumps.leftX,
+      y:    appState.stumps.topY,
+      // When this handle moves, update leftX and topY
+      setPos: function(x, y) {
+        appState.stumps.leftX = x;
+        appState.stumps.topY  = y;
+      }
+    },
+    topRight: {
+      name: 'topRight',
+      x:    appState.stumps.rightX,
+      y:    appState.stumps.topY,
+      // When this handle moves, update rightX and topY
+      setPos: function(x, y) {
+        appState.stumps.rightX = x;
+        appState.stumps.topY   = y;
+      }
+    },
+    bottomLeft: {
+      name: 'bottomLeft',
+      x:    appState.stumps.leftX,
+      y:    appState.stumps.bottomY,
+      setPos: function(x, y) {
+        appState.stumps.leftX   = x;
+        appState.stumps.bottomY = y;
+      }
+    },
+    bottomRight: {
+      name: 'bottomRight',
+      x:    appState.stumps.rightX,
+      y:    appState.stumps.bottomY,
+      setPos: function(x, y) {
+        appState.stumps.rightX  = x;
+        appState.stumps.bottomY = y;
+      }
+    }
+  };
+}
+
+// =============================================
+// DRAWING — Stumps WITH drag handles
+// =============================================
+
+function drawStumps() {
+  const { leftX, rightX, topY, bottomY } = appState.stumps;
+  const midX = Math.round((leftX + rightX) / 2);
+
+  // ---- Draw 3 stump posts ----
+  ctx.lineWidth   = 4;
+  ctx.strokeStyle = '#ffffff';
+
+  [leftX, midX, rightX].forEach(function(x) {
+    ctx.beginPath();
+    ctx.moveTo(x, topY);
+    ctx.lineTo(x, bottomY);
+    ctx.stroke();
+  });
+
+  // ---- Draw bails ----
+  ctx.beginPath();
+  ctx.strokeStyle = '#ffdd00';
+  ctx.lineWidth   = 3;
+  ctx.moveTo(leftX,  topY);
+  ctx.lineTo(rightX, topY);
+  ctx.stroke();
+
+  // ---- If in calibration mode, draw the corner handles ----
+  if (calibState.isActive) {
+    drawCalibrationHandles();
+  }
+}
+
+// ---- Draw the 4 draggable corner handles ----
+function drawCalibrationHandles() {
+  const handles = getHandles();
+  const radius  = calibState.handleRadius;
+
+  Object.values(handles).forEach(function(handle) {
+    const isActive = (calibState.activeHandle === handle.name);
+
+    // Outer glow ring (makes handle easier to see)
+    ctx.beginPath();
+    ctx.arc(handle.x, handle.y, radius + 4, 0, Math.PI * 2);
+    ctx.fillStyle = isActive
+      ? 'rgba(255, 107, 53, 0.35)'   // Orange glow when dragging
+      : 'rgba(255, 221, 0, 0.20)';   // Yellow glow when idle
+    ctx.fill();
+
+    // Main handle circle
+    ctx.beginPath();
+    ctx.arc(handle.x, handle.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle   = isActive ? '#ff6b35' : '#ffdd00';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth   = 2;
+    ctx.fill();
+    ctx.stroke();
+
+    // Small dot in centre of handle
+    ctx.beginPath();
+    ctx.arc(handle.x, handle.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = isActive ? '#ffffff' : '#1a1a2e';
+    ctx.fill();
+  });
+
+  // Draw a dashed bounding box around the stump area
+  // This helps users see what they're resizing
+  const { leftX, rightX, topY, bottomY } = appState.stumps;
+  ctx.beginPath();
+  ctx.setLineDash([6, 4]);           // Dashed line
+  ctx.strokeStyle = 'rgba(255, 221, 0, 0.5)';
+  ctx.lineWidth   = 1.5;
+  ctx.rect(leftX, topY, rightX - leftX, bottomY - topY);
+  ctx.stroke();
+  ctx.setLineDash([]);               // Reset to solid line
+
+  // Draw calibration mode label at top of canvas
+  ctx.fillStyle = 'rgba(255, 107, 53, 0.85)';
+  ctx.fillRect(0, 0, trajectoryCanvas.width, 30);
+  ctx.fillStyle = '#ffffff';
+  ctx.font      = 'bold 14px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    '📐 CALIBRATION MODE — Drag the yellow handles to resize stumps',
+    trajectoryCanvas.width / 2,
+    20
+  );
+  ctx.textAlign = 'left';
+}
+
+// ---- Update live coordinate display below canvas ----
+function updateCoordDisplay() {
+  const { leftX, rightX, topY, bottomY } = appState.stumps;
+
+  document.getElementById('coordTopLeft').textContent
+    = `x:${Math.round(leftX)}, y:${Math.round(topY)}`;
+
+  document.getElementById('coordTopRight').textContent
+    = `x:${Math.round(rightX)}, y:${Math.round(topY)}`;
+
+  document.getElementById('coordBotLeft').textContent
+    = `x:${Math.round(leftX)}, y:${Math.round(bottomY)}`;
+
+  document.getElementById('coordBotRight').textContent
+    = `x:${Math.round(rightX)}, y:${Math.round(bottomY)}`;
+}
+
+// =============================================
+// CALIBRATION MODE TOGGLE
+// =============================================
+
+const toggleCalibBtn   = document.getElementById('toggleCalibrationBtn');
+const resetStumpsBtn   = document.getElementById('resetStumpsBtn');
+const saveCalibBtn     = document.getElementById('saveCalibrationBtn');
+
+// ---- Enter / Exit Calibration Mode ----
+toggleCalibBtn.addEventListener('click', function() {
+
+  calibState.isActive = !calibState.isActive;   // Flip the mode
+
+  if (calibState.isActive) {
+    // --- ENTERING calibration mode ---
+    toggleCalibBtn.textContent = '✅ Exit Calibration Mode';
+    toggleCalibBtn.classList.add('calibrating');
+    trajectoryCanvas.classList.add('calibration-active');
+    saveCalibBtn.disabled = false;
+    showStatusMessage('📐 Calibration Mode ON — drag the yellow corners!');
+
+  } else {
+    // --- EXITING calibration mode ---
+    toggleCalibBtn.textContent = '📐 Enter Calibration Mode';
+    toggleCalibBtn.classList.remove('calibrating');
+    trajectoryCanvas.classList.remove('calibration-active');
+    trajectoryCanvas.classList.remove('dragging-handle');
+    calibState.isDragging   = false;
+    calibState.activeHandle = null;
+    showStatusMessage('📐 Calibration Mode OFF');
+  }
+
+  // Redraw canvas to show/hide handles
   ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
   if (appState.trajectoryPoints.length > 0) {
     drawTrajectory(appState.trajectoryPoints);
   }
   drawStumps();
+});
+
+// ---- Reset stumps to default positions ----
+resetStumpsBtn.addEventListener('click', function() {
+  appState.stumps.leftX   = DEFAULT_STUMPS.leftX;
+  appState.stumps.rightX  = DEFAULT_STUMPS.rightX;
+  appState.stumps.topY    = DEFAULT_STUMPS.topY;
+  appState.stumps.bottomY = DEFAULT_STUMPS.bottomY;
+
+  updateCoordDisplay();
+
+  ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
+  if (appState.trajectoryPoints.length > 0) {
+    drawTrajectory(appState.trajectoryPoints);
+  }
+  drawStumps();
+
+  showStatusMessage('🔄 Stumps reset to default position');
+});
+
+// =============================================
+// MOUSE EVENT HANDLERS — Desktop
+// =============================================
+
+// ---- Helper: Get mouse position relative to canvas ----
+function getCanvasPos(event) {
+  const rect  = trajectoryCanvas.getBoundingClientRect();
+
+  // Scale factor: canvas internal size vs display size
+  // This is important because CSS may scale the canvas differently
+  const scaleX = trajectoryCanvas.width  / rect.width;
+  const scaleY = trajectoryCanvas.height / rect.height;
+
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top)  * scaleY
+  };
 }
 
-leftStumpSlider.addEventListener('input',   updateStumpsFromSliders);
-rightStumpSlider.addEventListener('input',  updateStumpsFromSliders);
-topStumpSlider.addEventListener('input',    updateStumpsFromSliders);
-bottomStumpSlider.addEventListener('input', updateStumpsFromSliders);
+// ---- Helper: Check if position is inside a handle circle ----
+function getHandleAtPos(x, y) {
+  const handles = getHandles();
+  const radius  = calibState.handleRadius + 6;  // Slightly bigger hit area
 
-// ---- Save Calibration to Backend ----
-document.getElementById('saveCalibrationBtn').addEventListener('click', async function () {
-  const config = {
-    left_stump:   { x: appState.stumps.leftX   },
-    right_stump:  { x: appState.stumps.rightX  },
-    top_stump:    { y: appState.stumps.topY     },
-    bottom_stump: { y: appState.stumps.bottomY  }
+  for (const handle of Object.values(handles)) {
+    const dist = Math.sqrt(
+      Math.pow(x - handle.x, 2) +
+      Math.pow(y - handle.y, 2)
+    );
+    if (dist <= radius) {
+      return handle;   // Return the handle that was clicked
+    }
+  }
+  return null;   // Nothing found
+}
+
+// ---- Mouse Down — start dragging ----
+trajectoryCanvas.addEventListener('mousedown', function(e) {
+  if (!calibState.isActive) return;  // Only work in calibration mode
+
+  const pos    = getCanvasPos(e);
+  const handle = getHandleAtPos(pos.x, pos.y);
+
+  if (handle) {
+    calibState.isDragging   = true;
+    calibState.activeHandle = handle.name;
+    trajectoryCanvas.classList.add('dragging-handle');
+    e.preventDefault();   // Prevent text selection while dragging
+  }
+});
+
+// ---- Mouse Move — update handle position ----
+trajectoryCanvas.addEventListener('mousemove', function(e) {
+  if (!calibState.isActive) return;
+
+  const pos = getCanvasPos(e);
+
+  if (calibState.isDragging && calibState.activeHandle) {
+    // Get the handle being dragged
+    const handles      = getHandles();
+    const activeHandle = handles[calibState.activeHandle];
+
+    // Clamp position so handle can't go outside canvas
+    const clampedX = Math.max(10, Math.min(trajectoryCanvas.width  - 10, pos.x));
+    const clampedY = Math.max(10, Math.min(trajectoryCanvas.height - 10, pos.y));
+
+    // Move the handle
+    activeHandle.setPos(clampedX, clampedY);
+
+    // Ensure stumps don't invert (left can't go past right, top can't go past bottom)
+    const minWidth  = 30;   // Minimum stump width in pixels
+    const minHeight = 60;   // Minimum stump height in pixels
+
+    if (appState.stumps.rightX - appState.stumps.leftX < minWidth) {
+      if (calibState.activeHandle.includes('Left')) {
+        appState.stumps.leftX = appState.stumps.rightX - minWidth;
+      } else {
+        appState.stumps.rightX = appState.stumps.leftX + minWidth;
+      }
+    }
+
+    if (appState.stumps.bottomY - appState.stumps.topY < minHeight) {
+      if (calibState.activeHandle.includes('top')) {
+        appState.stumps.topY = appState.stumps.bottomY - minHeight;
+      } else {
+        appState.stumps.bottomY = appState.stumps.topY + minHeight;
+      }
+    }
+
+    // Redraw canvas with updated stump positions
+    ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
+    if (appState.trajectoryPoints.length > 0) {
+      drawTrajectory(appState.trajectoryPoints);
+    } else {
+      drawStumps();
+    }
+
+    // Update live coordinate readout
+    updateCoordDisplay();
+
+  } else {
+    // Not dragging — just check if hovering over a handle
+    // Change cursor to "grab" if hovering over one
+    const handle = getHandleAtPos(pos.x, pos.y);
+    trajectoryCanvas.style.cursor = handle ? 'grab' : 'crosshair';
+  }
+});
+
+// ---- Mouse Up — stop dragging ----
+trajectoryCanvas.addEventListener('mouseup', function() {
+  if (calibState.isDragging) {
+    calibState.isDragging   = false;
+    calibState.activeHandle = null;
+    trajectoryCanvas.classList.remove('dragging-handle');
+    trajectoryCanvas.style.cursor = 'crosshair';
+  }
+});
+
+// ---- Mouse Leave canvas — stop dragging (safety) ----
+trajectoryCanvas.addEventListener('mouseleave', function() {
+  if (calibState.isDragging) {
+    calibState.isDragging   = false;
+    calibState.activeHandle = null;
+    trajectoryCanvas.classList.remove('dragging-handle');
+  }
+});
+
+// =============================================
+// TOUCH EVENT HANDLERS — Mobile Support
+// =============================================
+
+// ---- Touch Start ----
+trajectoryCanvas.addEventListener('touchstart', function(e) {
+  if (!calibState.isActive) return;
+
+  const touch  = e.touches[0];
+  const rect   = trajectoryCanvas.getBoundingClientRect();
+  const scaleX = trajectoryCanvas.width  / rect.width;
+  const scaleY = trajectoryCanvas.height / rect.height;
+
+  const pos    = {
+    x: (touch.clientX - rect.left) * scaleX,
+    y: (touch.clientY - rect.top)  * scaleY
   };
 
+  const handle = getHandleAtPos(pos.x, pos.y);
+
+  if (handle) {
+    calibState.isDragging   = true;
+    calibState.activeHandle = handle.name;
+    e.preventDefault();   // Prevent page scrolling while dragging
+  }
+}, { passive: false });
+
+// ---- Touch Move ----
+trajectoryCanvas.addEventListener('touchmove', function(e) {
+  if (!calibState.isActive || !calibState.isDragging) return;
+
+  const touch  = e.touches[0];
+  const rect   = trajectoryCanvas.getBoundingClientRect();
+  const scaleX = trajectoryCanvas.width  / rect.width;
+  const scaleY = trajectoryCanvas.height / rect.height;
+
+  const pos = {
+    x: (touch.clientX - rect.left) * scaleX,
+    y: (touch.clientY - rect.top)  * scaleY
+  };
+
+  if (calibState.activeHandle) {
+    const handles      = getHandles();
+    const activeHandle = handles[calibState.activeHandle];
+
+    const clampedX = Math.max(10, Math.min(trajectoryCanvas.width  - 10, pos.x));
+    const clampedY = Math.max(10, Math.min(trajectoryCanvas.height - 10, pos.y));
+
+    activeHandle.setPos(clampedX, clampedY);
+
+    // Enforce minimum stump size
+    const minWidth  = 30;
+    const minHeight = 60;
+
+    if (appState.stumps.rightX - appState.stumps.leftX < minWidth) {
+      if (calibState.activeHandle.includes('Left')) {
+        appState.stumps.leftX = appState.stumps.rightX - minWidth;
+      } else {
+        appState.stumps.rightX = appState.stumps.leftX + minWidth;
+      }
+    }
+
+    if (appState.stumps.bottomY - appState.stumps.topY < minHeight) {
+      if (calibState.activeHandle.includes('top')) {
+        appState.stumps.topY = appState.stumps.bottomY - minHeight;
+      } else {
+        appState.stumps.bottomY = appState.stumps.topY + minHeight;
+      }
+    }
+
+    ctx.clearRect(0, 0, trajectoryCanvas.width, trajectoryCanvas.height);
+    if (appState.trajectoryPoints.length > 0) {
+      drawTrajectory(appState.trajectoryPoints);
+    } else {
+      drawStumps();
+    }
+
+    updateCoordDisplay();
+  }
+
+  e.preventDefault();
+}, { passive: false });
+
+// ---- Touch End ----
+trajectoryCanvas.addEventListener('touchend', function() {
+  calibState.isDragging   = false;
+  calibState.activeHandle = null;
+});
+
+// =============================================
+// SAVE CALIBRATION — Sends to Backend
+// =============================================
+
+saveCalibBtn.addEventListener('click', async function() {
+  const { leftX, rightX, topY, bottomY } = appState.stumps;
+
+  const config = {
+    left_stump:   { x: Math.round(leftX)   },
+    right_stump:  { x: Math.round(rightX)  },
+    top_stump:    { y: Math.round(topY)     },
+    bottom_stump: { y: Math.round(bottomY) }
+  };
+
+  // Save to localStorage so calibration persists after refresh!
+  localStorage.setItem('stumpCalibration', JSON.stringify(config));
+
   try {
+    // Also send to backend
     const response = await fetch(BACKEND_URL + '/api/stumps', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(config)
     });
     const result = await response.json();
-    showStatusMessage('📐 ' + result.message);
+    showStatusMessage('💾 Calibration saved! ' + result.message);
   } catch (error) {
-    showStatusMessage('❌ Could not save calibration');
+    // If backend is offline, at least local save worked
+    showStatusMessage('💾 Calibration saved locally!');
   }
+
+  console.log('📐 Calibration saved:', config);
 });
+
+// ---- Load saved calibration on startup ----
+function loadSavedCalibration() {
+  const saved = localStorage.getItem('stumpCalibration');
+  if (saved) {
+    try {
+      const config = JSON.parse(saved);
+      appState.stumps.leftX   = config.left_stump.x;
+      appState.stumps.rightX  = config.right_stump.x;
+      appState.stumps.topY    = config.top_stump.y;
+      appState.stumps.bottomY = config.bottom_stump.y;
+      updateCoordDisplay();
+      console.log('📐 Loaded saved calibration from device');
+      showStatusMessage('📐 Previous calibration loaded!');
+    } catch (e) {
+      console.log('No saved calibration found — using defaults');
+    }
+  }
+}
+
 
 // =============================================
 // SECTION 8 — STATUS MESSAGE POPUP
@@ -688,9 +1143,9 @@ function showStatusMessage(message) {
 // =============================================
 // SECTION 9 — STARTUP
 // =============================================
-// When the page first loads:
 resizeCanvas();
+loadSavedCalibration();    // ← Load any previously saved calibration
 drawStumps();
+updateCoordDisplay();      // ← Show initial coordinates
 loadDeliveryHistory();
-console.log('🏏 Cricket DRS App loaded!');
-
+console.log('🏏 Cricket DRS App loaded — Drag & Drop calibration ready!');

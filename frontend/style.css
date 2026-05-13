@@ -136,7 +136,10 @@ button:disabled {
   margin-bottom: 16px;
 }
 
-/* ---- Calibration Panel ---- */
+/* =============================================
+   STUMP CALIBRATION PANEL — Drag & Drop System
+   ============================================= */
+
 .calibration-panel {
   background: #16213e;
   border: 2px solid #00d4aa;
@@ -144,42 +147,141 @@ button:disabled {
   padding: 16px;
   max-width: 640px;
   margin: 0 auto 16px;
-  text-align: left;
+  text-align: center;
 }
 
 .calibration-panel h3 {
   color: #00d4aa;
-  margin-bottom: 8px;
-  text-align: center;
-}
-
-.calibration-panel p {
-  color: #aaaaaa;
-  font-size: 13px;
+  font-size: 18px;
   margin-bottom: 12px;
-  text-align: center;
 }
 
-/* Each slider row */
-.calibration-panel label {
+/* ---- Instruction Steps ---- */
+.calibration-instructions {
+  background: #0f3460;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.calibration-instructions p {
+  color: #cccccc;
+  font-size: 13px;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.calibration-instructions p:last-child {
+  margin-bottom: 0;
+}
+
+.calibration-instructions strong {
+  color: #00d4aa;
+}
+
+/* ---- Button Row ---- */
+.calibration-btn-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  font-size: 14px;
   gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
 
-/* Sliders fill available space */
-.calibration-panel input[type="range"] {
-  flex: 1;
-  accent-color: #00d4aa; /* Green slider thumb */
+/* Toggle calibration mode button — turns orange when active */
+#toggleCalibrationBtn {
+  background: #00d4aa;
+  transition: background 0.2s, box-shadow 0.2s;
 }
 
-#saveCalibrationBtn {
+#toggleCalibrationBtn.calibrating {
+  background: #ff6b35;
+  box-shadow: 0 0 14px rgba(255, 107, 53, 0.6);
+  animation: pulse 1.5s infinite;
+}
+
+/* Reset button — subtler style */
+#resetStumpsBtn {
+  background: #444466;
+  color: #cccccc;
+}
+
+#resetStumpsBtn:hover {
+  background: #555588;
+}
+
+/* Pulse animation while calibrating */
+@keyframes pulse {
+  0%   { box-shadow: 0 0 8px  rgba(255, 107, 53, 0.4); }
+  50%  { box-shadow: 0 0 20px rgba(255, 107, 53, 0.9); }
+  100% { box-shadow: 0 0 8px  rgba(255, 107, 53, 0.4); }
+}
+
+/* ---- Live Coordinate Display ---- */
+.stump-coords-display {
+  display: grid;
+  grid-template-columns: 1fr 1fr;  /* 2 columns */
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.coord-item {
+  background: #0f3460;
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.coord-label {
+  color: #aaaaaa;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.coord-value {
+  color: #00d4aa;
+  font-size: 13px;
+  font-family: monospace;
+  font-weight: bold;
+}
+
+/* ---- Save Calibration Button ---- */
+.save-calib-btn {
   width: 100%;
-  margin-top: 10px;
+  margin-top: 4px;
+  background: #00d4aa;
+  opacity: 0.5;          /* Greyed out until calibration active */
+  transition: opacity 0.2s;
 }
+
+.save-calib-btn:not(:disabled) {
+  opacity: 1;
+}
+
+/* =============================================
+   CANVAS — Drag Handle Visual Styles
+   These are drawn ON the canvas (not HTML elements)
+   but we define colors as CSS variables for reference
+   ============================================= */
+
+/* When in calibration mode the canvas gets a colored border */
+#trajectoryCanvas.calibration-active {
+  pointer-events: all !important; /* Allow mouse/touch clicks */
+  cursor: crosshair;
+  border: 3px solid #ff6b35 !important;
+  box-shadow: 0 0 20px rgba(255, 107, 53, 0.5) !important;
+}
+
+/* Cursor changes when hovering over a handle */
+#trajectoryCanvas.dragging-handle {
+  cursor: grabbing !important;
+}
+
 
 /* ---- Delivery History ---- */
 .delivery-history {

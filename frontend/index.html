@@ -108,15 +108,54 @@
   </div>
 
   <!-- ===== STUMP CALIBRATION PANEL ===== -->
-  <div class="calibration-panel" id="calibrationPanel">
-    <h3>📐 Camera Calibration</h3>
-    <p>Drag the sliders to align the stumps with your video</p>
-    <label>Left Stump X:  <input type="range" id="leftStumpX"  min="100" max="400" value="290" /></label>
-    <label>Right Stump X: <input type="range" id="rightStumpX" min="100" max="400" value="350" /></label>
-    <label>Top Stump Y:   <input type="range" id="topStumpY"   min="50"  max="250" value="160" /></label>
-    <label>Bottom Stump Y:<input type="range" id="bottomStumpY" min="150" max="400" value="300" /></label>
-    <button id="saveCalibrationBtn">✅ Save Calibration</button>
+<div class="calibration-panel" id="calibrationPanel">
+
+  <h3>📐 Stump Calibration</h3>
+
+  <!-- Instructions -->
+  <div class="calibration-instructions">
+    <p>🟡 Click <strong>"Enter Calibration Mode"</strong> to start</p>
+    <p>🖱️ Then <strong>drag the yellow corner handles</strong> on the canvas to resize and move the stumps</p>
+    <p>💾 Click <strong>"Save"</strong> when stumps are aligned with your video</p>
   </div>
+
+  <!-- Calibration Mode Toggle Button -->
+  <div class="calibration-btn-row">
+    <button id="toggleCalibrationBtn">
+      📐 Enter Calibration Mode
+    </button>
+    <button id="resetStumpsBtn">
+      🔄 Reset to Default
+    </button>
+  </div>
+
+  <!-- Stump Coordinate Display (live readout) -->
+  <div class="stump-coords-display" id="stumpCoordsDisplay">
+    <div class="coord-item">
+      <span class="coord-label">↖ Top Left</span>
+      <span class="coord-value" id="coordTopLeft">x:290, y:160</span>
+    </div>
+    <div class="coord-item">
+      <span class="coord-label">↗ Top Right</span>
+      <span class="coord-value" id="coordTopRight">x:350, y:160</span>
+    </div>
+    <div class="coord-item">
+      <span class="coord-label">↙ Bot Left</span>
+      <span class="coord-value" id="coordBotLeft">x:290, y:300</span>
+    </div>
+    <div class="coord-item">
+      <span class="coord-label">↘ Bot Right</span>
+      <span class="coord-value" id="coordBotRight">x:350, y:300</span>
+    </div>
+  </div>
+
+  <!-- Save Button -->
+  <button id="saveCalibrationBtn" class="save-calib-btn" disabled>
+    💾 Save Calibration
+  </button>
+
+</div>
+
 
   <!-- ===== DELIVERY HISTORY ===== -->
   <div class="delivery-history">
